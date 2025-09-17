@@ -27,7 +27,6 @@ if (name == NULL) {
 	erru = (errorState){ runtimeErr, failMeasage };
 	return;
 }
-this is a testS
 */
 
 
