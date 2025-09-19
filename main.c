@@ -87,6 +87,12 @@ VkSemaphore* imageAvailableSemaphores = NULL;
 VkSemaphore* renderFinishedSemaphores = NULL; // allocated in createSyncObjects
 VkFence* inFlightFences = NULL;
 
+//these needed to be added here for some unkown Godamn reason.
+void createSwapChain();
+void createImageViews();
+void createFramebuffers();
+
+
 
 const char* validationLayers[] = {
 	"VK_LAYER_KHRONOS_validation"
@@ -273,12 +279,51 @@ void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 	}
 }
 
+void cleanupSwapChain() {
+	for (unsigned int i = 0; i < swapChainImageCount; i++) {
+		vkDestroyFramebuffer(device, swapChainFramebuffers[i], NULL);
+	}
+
+	for (unsigned int i = 0; i < swapChainImageCount; i++) {
+		vkDestroyImageView(device, swapChainImageViews[i], NULL);
+	}
+
+	vkDestroySwapchainKHR(device, swapChain, NULL);
+}
+
+void recreateSwapChain() {
+	vkDeviceWaitIdle(device);
+	cleanupSwapChain();
+	
+	createSwapChain();
+	check();
+	createImageViews();
+	check();
+	createFramebuffers();
+	check();
+
+
+}
+
 void drawFrame() {
+	VkResult result;
+
 	vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-	vkResetFences(device, 1, &inFlightFences[currentFrame]);
+	
 
 	uint32_t imageIndex;
-	vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+	result = vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		recreateSwapChain();
+		//check();
+		return;
+	}
+	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		erru = (errorState){ runtimeErr, "error in drawFrame(), failed to aquire next swapchain image." };
+		return;
+	}
+
+	vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 	vkResetCommandBuffer(commandBuffers[currentFrame], 0);
 	recordCommandBuffer(commandBuffers[currentFrame], imageIndex);
@@ -314,7 +359,15 @@ void drawFrame() {
 	presentInfo.pSwapchains = swapChains;
 	presentInfo.pImageIndices = &imageIndex;
 	presentInfo.pResults = NULL;
-	vkQueuePresentKHR(presentQueue, &presentInfo);
+	result = vkQueuePresentKHR(presentQueue, &presentInfo);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+		recreateSwapChain();
+		//check
+	}
+	else if (result != VK_SUCCESS) {
+		erru = (errorState){ runtimeErr, "error in drawFrame, failed to present swap chain image." };
+		return;
+	}
 
 	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
@@ -1271,7 +1324,7 @@ void initWindow() {
 	//not using openGL
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	//don't make window resizable
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	//make window invisible until the main loop
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
