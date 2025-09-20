@@ -57,8 +57,8 @@ struct shaderCode {
 };
 
 //THE LIST.
-const uint32_t windowWidth = 800;
-const uint32_t windowHeight = 600;
+const uint32_t windowWidth = 1024;
+const uint32_t windowHeight = 1024;
 uint32_t currentFrame = 0;
 GLFWwindow* window;
 VkInstance instance;
@@ -270,7 +270,8 @@ void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 	scissor.extent = swapChainExtent;
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-	vkCmdDraw(commandBuffer, 3, 1, 0, 0); // so fucking satisfying.
+	//lol, i needed to change the number of vertices so i literally just looked up "3" and pushed past all the "uint32_t"'s, glad the fix was so simple.
+	vkCmdDraw(commandBuffer, 4, 1, 0, 0); // so fucking satisfying.
 
 	vkCmdEndRenderPass(commandBuffer);
 	if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -584,7 +585,7 @@ void createGraphicsPipeline() {
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly = {0};
 	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP; //VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
 	inputAssembly.primitiveRestartEnable = VK_FALSE;
 
 	VkViewport viewport = {0};
@@ -613,7 +614,7 @@ void createGraphicsPipeline() {
 	rasterizer.rasterizerDiscardEnable = VK_FALSE;
 	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizer.cullMode = VK_CULL_MODE_NONE;
 	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rasterizer.depthBiasEnable = VK_FALSE;
 	rasterizer.depthBiasConstantFactor = 0.0f;
