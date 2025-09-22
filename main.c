@@ -398,7 +398,6 @@ void mainLoop() {
 
 		
 	}
-	userInput();
 
 	vkDeviceWaitIdle(device);
 
