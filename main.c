@@ -1113,6 +1113,8 @@ bool isDeviceSuitable(VkPhysicalDevice device) {
 		swapChainAdequate = (swapChainSupport.formats != NULL) && (swapChainSupport.presentModes != NULL);
 	}
 
+	//printf("device type: %d\n", deviceProperties.deviceType);
+
 	return (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
 		&& deviceFeatures.geometryShader
 		&& queueFamilies.graphicsFamilyExists
@@ -1395,7 +1397,7 @@ void app() {
 	initiateVulcan();
 	check();
 	userInput();
-
+	
 	mainLoop();
 	check();
 	terminate();
