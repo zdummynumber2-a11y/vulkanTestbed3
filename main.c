@@ -2,9 +2,6 @@
 #undef APIENTRY // already defined in glfw
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
-/*#ifndef NDEBUG
-#define NDEBUG
-#endif*///uncomment to put out of debug mode
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -13,7 +10,11 @@
 #include <string.h>
 #include <math.h>
 #include <sys/stat.h>
+#include <stdarg.h>
 #define MAX_FRAMES_IN_FLIGHT 2
+//#ifndef NDEBUG
+//#define NDEBUG
+//#endif//uncomment to put out of debug mode
 
 typedef struct {
 	uint32_t code;
@@ -38,6 +39,16 @@ typedef enum {
 	invalidArgumentErr,
 	internalLogicErr
 } errorType;
+
+void debugLog(const char* measage, ...) {
+#ifdef NDEBUG
+	return;
+#endif
+	va_list arguments;
+	va_start(arguments, measage);
+	vprintf(measage, arguments);
+	va_end(arguments);
+}
 
 struct queueFamilyIndices {
 	uint32_t graphicsFamily;
@@ -142,70 +153,70 @@ void terminate() {
 		free(imageAvailableSemaphores);
 		free(renderFinishedSemaphores);
 		free(inFlightFences);
-		printf("destroyed syncronization objects\n");
+		debugLog("destroyed syncronization objects\n");
 	}
 
 	if (commandPool != NULL) {
 		vkDestroyCommandPool(device, commandPool, NULL);
-		printf("destroyed command pool\n");
+		debugLog("destroyed command pool\n");
 	}
 
 	if (swapChainFramebuffers != NULL) {
 		for (unsigned int i = 0; i < swapChainImageCount; i++) {
 			vkDestroyFramebuffer(device, swapChainFramebuffers[i], NULL);
 		}
-		printf("destroyed framebuffers\n");
+		debugLog("destroyed framebuffers\n");
 	}
 
 	if (graphicsPipeline != NULL) {
 		vkDestroyPipeline(device, graphicsPipeline, NULL);
-		printf("destroyed graphics pipeline\n");
+		debugLog("destroyed graphics pipeline\n");
 	}
 
 	if (pipelineLayout != NULL) {
 		vkDestroyPipelineLayout(device, pipelineLayout, NULL);
-		printf("destroyed pipeline layout\n");
+		debugLog("destroyed pipeline layout\n");
 	}
 
 	if (renderPass != NULL) {
 		vkDestroyRenderPass(device, renderPass, NULL);
-		printf("destroyed render pass\n");
+		debugLog("destroyed render pass\n");
 	}
 
 	if (swapChainImageViews != NULL) {
 		for (unsigned int i = 0; i < swapChainImageCount; i++) {
 			vkDestroyImageView(device, swapChainImageViews[i], NULL);
 		}
-		printf("destroyed image veiws\n");
+		debugLog("destroyed image veiws\n");
 	}
 
 	if (swapChain != NULL) {
 		vkDestroySwapchainKHR(device, swapChain, NULL);
-		printf("destroyed swapchain\n");
+		debugLog("destroyed swapchain\n");
 	}
 
 	if (device != NULL) {
 		vkDestroyDevice(device, NULL);
-		printf("destroyed virtual device\n");
+		debugLog("destroyed virtual device\n");
 	}
 
 	if (surface != NULL) {
 		vkDestroySurfaceKHR(instance, surface, NULL);
-		printf("destroyed vulkan surface\n");
+		debugLog("destroyed vulkan surface\n");
 	}
 
 	if (instance != NULL) {
 		vkDestroyInstance(instance, NULL);
-		printf("destroyed vulkan instance\n");
+		debugLog("destroyed vulkan instance\n");
 	}
 
 	if (window != NULL) {
 		glfwDestroyWindow(window);
-		printf("destroyed GLFW window\n");
+		debugLog("destroyed GLFW window\n");
 	}
 
 	glfwTerminate();
-	printf("terminated GLFW\n");
+	debugLog("terminated GLFW\n");
 	free(swapChainSupport.formats);
 	free(swapChainSupport.presentModes);
 
@@ -215,7 +226,7 @@ void terminate() {
 		exit(-1);
 	}
 	else {
-		printf("\nexiting program with no errors\n");
+		debugLog("\nexiting program with no errors\n");
 		exit(0);
 	}
 
@@ -393,7 +404,7 @@ void mainLoop() {
 		drawFrame();
 		check();
 
-		printf("frame compleate:%d\n", frameCount);
+		debugLog("frame compleate:%d\n", frameCount);
 		frameCount++;
 
 		
@@ -402,6 +413,7 @@ void mainLoop() {
 	vkDeviceWaitIdle(device);
 
 }
+
 
 
 void userInput() {
@@ -919,7 +931,7 @@ void createLogicalDevice() {
 	uniqueCount++;
 
 	if (queueFamilies.presentFamily != uniqueFamilys[0]) {
-		printf("present family detected as distinct from graphics family.\n");
+		debugLog("present family detected as distinct from graphics family.\n");
 		uniqueFamilys[1] = queueFamilies.presentFamily;
 		uniqueCount++;
 	}
@@ -1023,7 +1035,7 @@ bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
 	}
 	vkEnumerateDeviceExtensionProperties(device, NULL, &extensionCount, availableExtensions);
 	//for (unsigned int i = 0; i < extensionCount; i++) {
-	//	printf("%s\n", availableExtensions[i].extensionName);
+	//	debugLog("%s\n", availableExtensions[i].extensionName);
 	//}
 
 	//for all required device extensions
@@ -1113,7 +1125,7 @@ bool isDeviceSuitable(VkPhysicalDevice device) {
 		swapChainAdequate = (swapChainSupport.formats != NULL) && (swapChainSupport.presentModes != NULL);
 	}
 
-	//printf("device type: %d\n", deviceProperties.deviceType);
+	//debugLog("device type: %d\n", deviceProperties.deviceType);
 
 	return (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
 		&& deviceFeatures.geometryShader
@@ -1397,7 +1409,6 @@ void app() {
 	initiateVulcan();
 	check();
 	userInput();
-	
 	mainLoop();
 	check();
 	terminate();
@@ -1405,7 +1416,7 @@ void app() {
 
 int main() {
 	app();
-	printf("reached end of instructions without propper termination path");
+	debugLog("reached end of instructions without propper termination path");
 	return -1;
 }
 
