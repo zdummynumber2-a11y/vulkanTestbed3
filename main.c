@@ -15,6 +15,7 @@
 //#ifndef NDEBUG
 //#define NDEBUG
 //#endif//uncomment to put out of debug mode
+//this is a test
 
 typedef struct {
 	uint32_t code;
