@@ -3,25 +3,62 @@
 
 layout(location = 0) out vec4 outColor;
 layout(location = 0) in vec2 fragColor;
+layout(push_constant) uniform PushConstants {
+    mat3 screanTranslation;
+    ivec3 playerPosition;
+} pcBuffer;
+float fog = 1;
 
 //all of this is completely bodged together.
 
 //lol, i don't even know how to set up my own VkBuffer yet, so i just hardcoded whether a voxel is occupied with this 3d function.
-bool isOccupied(ivec3 position) {
-    /*int sum = position[0] + (position[1] << 1) + (position[2] << 2);
-    return bool(((sum >> 0) & 1) * ((sum >> 1) & 1) * ((sum >> 2) & 1) * ((sum >> 3) & 1));*/
+bool isOccupied(ivec3 position, uint16_t direction, int16_t directionSighn) {
+    float returnColor;
+    if(cos((float(position[0]) + float(position[1])) * 0.0625 + 20.0) + cos((float(position[1]) + float(position[2])) * 0.0625 + 30.0) + cos((float(position[2]) + float(position[0])) * 0.0625 + 40.0) > 0.5) {
+        if(direction == 0) {
+            returnColor = float(0.625);
+        }
+        else if(direction == 1) {
+            returnColor = float(0.5);
+        }
+        else if(direction == 2) {
+            returnColor = float(0.25);
+        }
+        else {
+        outColor = vec4(1.0, 0.0, 1.0, 1.0);
+        return true;
+        }
 
-    return (cos((float(position[0]) + float(position[1])) * 0.03125 + 20.0) + cos((float(position[1]) + float(position[2])) * 0.03125 + 30.0) + cos((float(position[2]) + float(position[0])) * 0.03125 + 40.0) > 0.5);
+        if(directionSighn == -1) {
+            returnColor = 1.0 - returnColor;
+        }
 
-    /*if (position == ivec3(8, 2, 3)) {
+        outColor = vec4(returnColor * fog, returnColor * fog, returnColor * fog, 1.0);
         return true;
     }
-    else {
-        return false;
-    }*/
+    return false;
 }
 
 void main() {
+    
+    vec3 screenVector = {1, 2 * fragColor[0] - 1, 2 * fragColor[1] - 1}
+    screenVector = screanTranslation * screenVector;
+    adjustment = max(max(screenVector[0],screenVector[1]), screenVector[2]); // cry about it
+    screenVector /= adjustment;
+
+
+    //already: looking forward, +y +z, going +x
+    //test one: looking down, +y, +x, going -z
+    //test two: looking left, +x, +z, going -y
+    //test three: looking behind, -y, -z, going -x
+    //test one: looking up, -y, -x, going +z
+    //test two: looking left, -x, -z, going +y
+
+    uint16_t xIndex = uint16_t(0);
+    uint16_t yIndex = uint16_t(1);
+    uint16_t zIndex = uint16_t(2);
+
+    
 
     //the rays angles are stored as slopes, the upside of this is that slopes are really easy and cheap to work with, the downside is that I'm stuck facing north for now.
     uint16_t xSlope;
@@ -51,11 +88,11 @@ void main() {
     
     
     
-    ivec3 universalPosition = ivec3(-2, -48, -31);
+    ivec3 universalPosition = ivec3(80, -15, -6);
     //at any given moment a rays x coordinate is always an integer, these will store where the ray intersects the x = integer plane.
     uint16_t xPose = uint16_t(0);
     uint16_t yPose = uint16_t(0);
-    float fog = 1;
+    
 
     //every iteration of this loop will step the x coordinate of the ray by 1.
     for(int i = 0; i < 384; i++) {
@@ -71,28 +108,24 @@ void main() {
             //(uint32_t(yPose) * xSlope) > (uint32_t(xPose) * ySlope)
             //true
             if ((uint32_t(yPose) * xSlope) > (uint32_t(xPose) * ySlope)) {
-                universalPosition[2] = universalPosition[2] + yDirection;
-                if(isOccupied(universalPosition)) {
-                    outColor = vec4(0.25 * fog, 0.25 * fog, 0.25 * fog, 1.0);
+                universalPosition[zIndex] = universalPosition[zIndex] + yDirection;
+                if(isOccupied(universalPosition, zIndex, yDirection)) {
                     return;
                 }
 
-                universalPosition[1] = universalPosition[1] + xDirection;
-                if(isOccupied(universalPosition)) {
-                    outColor = vec4(0.5 * fog, 0.5 * fog, 0.5 * fog, 1.0);
+                universalPosition[yIndex] = universalPosition[yIndex] + xDirection;
+                if(isOccupied(universalPosition, yIndex, xDirection)) {
                     return;
                 }
             }
             else {
-                universalPosition[1] = universalPosition[1] + xDirection;
-                if(isOccupied(universalPosition)) {
-                    outColor = vec4(0.5 * fog, 0.5 * fog, 0.5 * fog, 1.0);
+                universalPosition[yIndex] = universalPosition[yIndex] + xDirection;
+                if(isOccupied(universalPosition, yIndex, xDirection)) {
                     return;
                 }
 
-                universalPosition[2] = universalPosition[2] + yDirection;
-                if(isOccupied(universalPosition)) {
-                    outColor = vec4(0.25 * fog, 0.25 * fog, 0.25 * fog, 1.0);
+                universalPosition[zIndex] = universalPosition[zIndex] + yDirection;
+                if(isOccupied(universalPosition, zIndex, yDirection)) {
                     return;
                 }
             }
@@ -104,23 +137,20 @@ void main() {
         else if (xPose >= 32768) {
             xPose = xPose % uint16_t(32768);
 
-            universalPosition[1] = universalPosition[1] + xDirection;
-            if(isOccupied(universalPosition)) {
-                outColor = vec4(0.5 * fog, 0.5 * fog, 0.5 * fog, 1.0);
+            universalPosition[yIndex] = universalPosition[yIndex] + xDirection;
+            if(isOccupied(universalPosition, yIndex, xDirection)) {
                 return;
             }
         }
         else if (yPose >= 32768) {
             yPose = yPose % uint16_t(32768);
-            universalPosition[2] = universalPosition[2] + yDirection;
-            if(isOccupied(universalPosition)) {
-                outColor = vec4(0.25 * fog, 0.25 * fog, 0.25 * fog, 1.0);
+            universalPosition[zIndex] = universalPosition[zIndex] + yDirection;
+            if(isOccupied(universalPosition, zIndex, yDirection)) {
                 return;
             }
         }
-        universalPosition[0]++;
-        if(isOccupied(universalPosition)) {
-            outColor = vec4(0.75 * fog, 0.75 * fog, 0.75 * fog, 1.0);
+        universalPosition[xIndex]++;
+        if(isOccupied(universalPosition, xIndex, int16_t(1))) {
             return;
         }
 
@@ -128,4 +158,6 @@ void main() {
 
     
     outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    
+
 }

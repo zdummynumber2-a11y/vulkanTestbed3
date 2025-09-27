@@ -1,5 +1,3 @@
-#include <windows.h>
-#undef APIENTRY // already defined in glfw
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
 #include <stdio.h>
@@ -69,6 +67,11 @@ struct shaderCode {
 	uint32_t* code;
 };
 
+struct pushConstant {
+	mat3 screanTranslation;
+	ivec3 playerPosition;
+};
+
 //THE LIST.
 const uint32_t windowWidth = 1024;
 const uint32_t windowHeight = 1024;
@@ -99,7 +102,15 @@ VkCommandBuffer commandBuffers[MAX_FRAMES_IN_FLIGHT];
 VkSemaphore* imageAvailableSemaphores = NULL;
 VkSemaphore* renderFinishedSemaphores = NULL; // allocated in createSyncObjects
 VkFence* inFlightFences = NULL;
-LARGE_INTEGER clockHTZ;
+struct pushConstant fragmentPushConstant = {
+	{
+		{0.0f, 0.0f, 0.0f},
+		{0.0f, 0.0f, 0.0f},
+		{0.0f, 0.0f, 0.0f}
+	},
+
+	{0, 0, 0}
+};
 
 //these needed to be added here for some unknown Goddamn reason.
 void createSwapChain();
@@ -270,6 +281,7 @@ void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 
 	vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+	vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(struct pushConstant), &fragmentPushConstant);
 
 	VkViewport viewport = { 0 };
 	viewport.x = 0.0f;
@@ -691,13 +703,17 @@ void createGraphicsPipeline() {
 	dynamicState.dynamicStateCount = (uint32_t)(sizeof(dynamicStates) / sizeof(dynamicStates[0]));
 	dynamicState.pDynamicStates = dynamicStates;
 
+	VkPushConstantRange pushConstantRange = {0};
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	pushConstantRange.offset = 0;
+	pushConstantRange.size = sizeof(struct pushConstant);
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = { 0 };
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = 0;
 	pipelineLayoutInfo.pSetLayouts = NULL;
-	pipelineLayoutInfo.pushConstantRangeCount = 0;
-	pipelineLayoutInfo.pPushConstantRanges = NULL;
+	pipelineLayoutInfo.pushConstantRangeCount = 1;
+	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
 	if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, NULL, &pipelineLayout) != VK_SUCCESS) {
 		erru = (errorState){ runtimeErr, "error in createGraphicsPipeline(), failed to create pipeline layout" };
@@ -1415,6 +1431,7 @@ void app() {
 }
 
 int main() {
+	debugLog("size of push constant: %d\n", sizeof(struct pushConstant));
 	app();
 	debugLog("reached end of instructions without propper termination path");
 	return -1;
