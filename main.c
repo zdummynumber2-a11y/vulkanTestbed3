@@ -1,6 +1,9 @@
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
 #include <stdio.h>
+#include <time.h>
+#include <windows.h>
+#undef APIENTRY
 #include <stdint.h>
 #include <stdlib.h>
 #include <GLFW/glfw3.h>
@@ -9,10 +12,37 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <stdarg.h>
+
 #define MAX_FRAMES_IN_FLIGHT 2
+#define PI 3.14159
+
+//settings
+
+//uncomment to put out of debug mode(no validation layers)
 //#ifndef NDEBUG
 //#define NDEBUG
-//#endif//uncomment to put out of debug mode
+//#endif
+
+//these are only the initial window dimencions 
+const uint32_t windowWidth = 1024;
+const uint32_t windowHeight = 1024;
+
+//this is horizontal FOV, vertical FOV is determined by this and the current dimensions of the window.
+float FOV = 90.0;
+
+bool playerIsImortal = false;
+
+//1 voxel is noposed to be 1 meter.
+float gravity = (float)9.8;
+
+float targetFramesPerSecond = 64.0;
+
+
+
+
+
+
+
 
 typedef struct {
 	uint32_t code;
@@ -39,9 +69,9 @@ typedef enum {
 } errorType;
 
 void debugLog(const char* measage, ...) {
-#ifdef NDEBUG
-	return;
-#endif
+	#ifdef NDEBUG
+		return;
+	#endif
 	va_list arguments;
 	va_start(arguments, measage);
 	vprintf(measage, arguments);
@@ -68,13 +98,12 @@ struct shaderCode {
 };
 
 struct pushConstant {
-	mat3 screanTranslation;
+	mat3x4 screanTranslation;
 	ivec3 playerPosition;
 };
 
 //THE LIST.
-const uint32_t windowWidth = 1024;
-const uint32_t windowHeight = 1024;
+
 uint32_t currentFrame = 0;
 GLFWwindow* window;
 VkInstance instance;
@@ -102,21 +131,27 @@ VkCommandBuffer commandBuffers[MAX_FRAMES_IN_FLIGHT];
 VkSemaphore* imageAvailableSemaphores = NULL;
 VkSemaphore* renderFinishedSemaphores = NULL; // allocated in createSyncObjects
 VkFence* inFlightFences = NULL;
+bool framebufferResized = false;
 struct pushConstant fragmentPushConstant = {
 	{
-		{0.0f, 0.0f, 0.0f},
-		{0.0f, 0.0f, 0.0f},
-		{0.0f, 0.0f, 0.0f}
+		{1.0, 0.0, 0.0, 0.0},
+		{0.0, 2.0, 0.0, 0.0},
+		{0.0, 0.0, 2.0, 0.0}
 	},
 
-	{0, 0, 0}
+	{80, -20, -6}
 };
+
+//cant use sizeof because of padding along the way.
+
+
 
 //these needed to be added here for some unknown Goddamn reason.
 void createSwapChain();
 void createImageViews();
 void createFramebuffers();
 void userInput();
+void querySwapChainSupport();
 
 
 const char* validationLayers[] = {
@@ -250,6 +285,14 @@ void check() {
 	}
 }
 
+
+void gameStep(int64_t stepNanoSeconds) {
+	vec3 rotationAxis = { 0.14121, 1.0, 0.618034 };
+	float rotationsPerSecond = 0.5;
+	glm_rotate(fragmentPushConstant.screanTranslation, rotationsPerSecond * 2 * PI * ((float)stepNanoSeconds / 1e9), rotationAxis);
+}
+
+
 void processInput(GLFWwindow* window) {
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, 1);
@@ -321,6 +364,13 @@ void cleanupSwapChain() {
 }
 
 void recreateSwapChain() {
+	int width = 0, height = 0;
+	glfwGetFramebufferSize(window, &width, &height);
+	while (width == 0 || height == 0) {
+		glfwGetFramebufferSize(window, &width, &height);
+		glfwWaitEvents();
+	}
+
 	vkDeviceWaitIdle(device);
 	cleanupSwapChain();
 
@@ -330,8 +380,8 @@ void recreateSwapChain() {
 	check();
 	createFramebuffers();
 	check();
-
-
+	
+	debugLog("width: %d. height %d.\n", swapChainSupport.capabilities.currentExtent.width, swapChainSupport.capabilities.currentExtent.height);
 }
 
 void drawFrame() {
@@ -389,7 +439,8 @@ void drawFrame() {
 	presentInfo.pImageIndices = &imageIndex;
 	presentInfo.pResults = NULL;
 	result = vkQueuePresentKHR(presentQueue, &presentInfo);
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized) {
+		framebufferResized = false;
 		recreateSwapChain();
 		//check
 	}
@@ -406,7 +457,16 @@ void mainLoop() {
 	glfwShowWindow(window);
 
 	int frameCount = 0;
+	struct timespec timeStart, timeEnd;
+	int64_t elapsedTime = 0; //in nanoseconds
+	int64_t targetTime = (int64_t)((1 / targetFramesPerSecond) * 1e9);
+	bool skipWait = false;
+	float rotationsPerSecond = 5;
 	while (!glfwWindowShouldClose(window)) {
+		if (timespec_get(&timeStart, TIME_UTC) == 0) {
+			skipWait = true;
+		}
+		
 
 		//process the inputs from the previous frame
 		processInput(window);
@@ -415,10 +475,26 @@ void mainLoop() {
 		glfwPollEvents();
 		drawFrame();
 		check();
+		gameStep(elapsedTime + max(0, (int64_t)round((targetTime - elapsedTime) / 1e6) * 1e6));
+		check();
 
-		debugLog("frame compleate:%d\n", frameCount);
+		//debugLog("frame compleate:%d\n", frameCount);
 		frameCount++;
+		
+		
+		if (timespec_get(&timeEnd, TIME_UTC) == 0) {
+			skipWait = true;
+		}
+		if (skipWait) {
+			debugLog("error in frametiming, framerest skipped");
+			continue;
+		}
 
+		elapsedTime = (int64_t)((timeEnd.tv_sec - timeStart.tv_sec) * 1e9 + timeEnd.tv_nsec - timeStart.tv_nsec);
+
+		if(targetTime > elapsedTime) {
+			Sleep((int)round((targetTime - elapsedTime) / 1e6));
+		}
 		
 	}
 
@@ -825,8 +901,10 @@ void createImageViews() {
 }
 
 VkExtent2D chooseSwapExtent(/*swapChainSupport.capabilities*/) {
+	
 	if (swapChainSupport.capabilities.currentExtent.width != UINT32_MAX) {
 		return swapChainSupport.capabilities.currentExtent;
+		
 	}
 	else {
 		int width;
@@ -838,11 +916,11 @@ VkExtent2D chooseSwapExtent(/*swapChainSupport.capabilities*/) {
 			(uint32_t)height
 		};
 
-		if (actualExtent.height < swapChainSupport.capabilities.minImageExtent.height) {
-			height = swapChainSupport.capabilities.minImageExtent.height;
+		if (actualExtent.width < swapChainSupport.capabilities.minImageExtent.width) {
+			width = swapChainSupport.capabilities.minImageExtent.height;
 		}
-		else if (actualExtent.height > swapChainSupport.capabilities.maxImageExtent.height) {
-			height = swapChainSupport.capabilities.maxImageExtent.height;
+		else if (actualExtent.width > swapChainSupport.capabilities.maxImageExtent.width) {
+			width = swapChainSupport.capabilities.maxImageExtent.width;
 		}
 		//else keep the same
 		if (actualExtent.height < swapChainSupport.capabilities.minImageExtent.height) {
@@ -878,6 +956,8 @@ VkSurfaceFormatKHR chooseSwapSurfaceFormat(/*swapChainSupport.formats*/) {
 }
 
 void createSwapChain() {
+	querySwapChainSupport(physicalDevice);
+	check();
 	VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat();
 	VkPresentModeKHR presentMode = chooseSwapPresentMode();
 	VkExtent2D extent = chooseSwapExtent();
@@ -1390,6 +1470,10 @@ void initiateVulcan() {
 	check();
 }
 
+void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
+	framebufferResized = true;
+}
+
 void initWindow() {
 
 
@@ -1406,6 +1490,7 @@ void initWindow() {
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
 	window = glfwCreateWindow(windowWidth, windowHeight, "Vulkan", NULL, NULL);
+	glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
 
 	if (window == NULL) {
 		erru = (errorState){ runtimeErr, "failed to create window in 'initWindow'" };
@@ -1431,7 +1516,6 @@ void app() {
 }
 
 int main() {
-	debugLog("size of push constant: %d\n", sizeof(struct pushConstant));
 	app();
 	debugLog("reached end of instructions without propper termination path");
 	return -1;
