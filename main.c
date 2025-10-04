@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <GLFW/glfw3.h>
-#include <cglm/cglm.h>
+#include <cglm/cglm.h> //fuck it, i'm making my own
 #include <string.h>
 #include <math.h>
 #include <sys/stat.h>
@@ -28,14 +28,14 @@ const uint32_t windowWidth = 1024;
 const uint32_t windowHeight = 1024;
 
 //this is horizontal FOV, vertical FOV is determined by this and the current dimensions of the window.
-float FOV = 90.0;
+float FOV = 126.87;
 
 bool playerIsImortal = false;
 
 //1 voxel is noposed to be 1 meter.
 float gravity = (float)9.8;
 
-float targetFramesPerSecond = 64.0;
+float targetFramesPerSecond = 30.0;
 
 
 
@@ -132,14 +132,15 @@ VkSemaphore* imageAvailableSemaphores = NULL;
 VkSemaphore* renderFinishedSemaphores = NULL; // allocated in createSyncObjects
 VkFence* inFlightFences = NULL;
 bool framebufferResized = false;
+struct pushConstant fragmentPushConstant;
 struct pushConstant fragmentPushConstant = {
 	{
 		{1.0, 0.0, 0.0, 0.0},
-		{0.0, 2.0, 0.0, 0.0},
-		{0.0, 0.0, 2.0, 0.0}
+		{0.0, 1.0, 0.0, 0.0},
+		{0.0, 0.0, 1.0, 0.0}
 	},
 
-	{80, -20, -6}
+	{100, 100, 100}
 };
 
 //cant use sizeof because of padding along the way.
@@ -286,16 +287,170 @@ void check() {
 }
 
 
+bool isPaused = true;
+float curserDeltaX;
+float curserDeltaY;
+bool forwardIsPressed;
+bool backwardIsPressed;
+bool leftIsPressed;
+bool rightIsPressed;
+bool upIsPressed;
+bool downIsPressed;
+bool slowIsPressed;
 void gameStep(int64_t stepNanoSeconds) {
-	vec3 rotationAxis = { 0.14121, 1.0, 0.618034 };
-	float rotationsPerSecond = 0.5;
-	glm_rotate(fragmentPushConstant.screanTranslation, rotationsPerSecond * 2 * PI * ((float)stepNanoSeconds / 1e9), rotationAxis);
+	if (isPaused) {
+		return;
+	}
+	static float xScale = 1;
+	static float aspectRatio = 1;
+	static float yScale = 1;
+	double stepSeconds = stepNanoSeconds / 1e9;
+
+	mat4 tempMatrix = GLM_MAT4_IDENTITY_INIT;
+	
+	static mat4 playerOrientation = GLM_MAT4_IDENTITY_INIT;
+	mat4 playerRotationDelta = GLM_MAT4_IDENTITY_INIT;
+	glm_rotate(playerRotationDelta, curserDeltaX / 512, (vec3) { 1.0, 0.0, 0.0 });
+	glm_rotate(playerRotationDelta, curserDeltaY / 512, (vec3) { 0.0, 1.0, 0.0 });
+	glm_mul(playerOrientation, playerRotationDelta, tempMatrix);
+	glm_mat4_copy(tempMatrix, playerOrientation);
+
+	
+	
+
+
+	xScale = (float)tan(FOV * PI / 360); // window width.
+	aspectRatio = (float)swapChainExtent.height / swapChainExtent.width;
+	yScale = aspectRatio * xScale;
+	mat4 fovMatrix = {
+		{1.0, 0.0, 0.0, 0.0},
+		{0.0, xScale, 0.0, 0.0},
+		{0.0, 0.0, yScale, 0.0},
+		{0.0, 0.0, 0.0, 0.0}
+	};
+	glm_mul(fovMatrix, playerOrientation, tempMatrix);
+	
+	static double playerX = 100;
+	static double playerY = 100;
+	static double playerZ = 100;
+	uint16_t playerSpeed;
+	if (slowIsPressed) {
+		playerSpeed = 1;
+	}
+	else {
+		playerSpeed = 50;
+	}
+	
+	if (forwardIsPressed) {
+		playerX += playerSpeed * stepSeconds;
+	}
+	if (rightIsPressed) {
+		playerY += playerSpeed * stepSeconds;
+	}
+	if (upIsPressed) {
+		playerZ += playerSpeed * stepSeconds;
+	}
+	if (backwardIsPressed) {
+		playerX -= playerSpeed * stepSeconds;
+	}
+	if (leftIsPressed) {
+		playerY -= playerSpeed * stepSeconds;
+	}
+	if (downIsPressed) {
+		playerZ -= playerSpeed * stepSeconds;
+	}
+	
+	//playerX += playerOrientation[0][0] * 25 * stepSeconds;
+	//playerY += playerOrientation[0][1] * 25 * stepSeconds;
+	//playerZ += playerOrientation[0][2] * 25 * stepSeconds;
+
+	tempMatrix[0][3] = fabs((float)fmod(playerX, 1));
+	tempMatrix[1][3] = fabs((float)fmod(playerY, 1));
+	tempMatrix[2][3] = fabs((float)fmod(playerZ, 1));
+	fragmentPushConstant.playerPosition[0] = (int)floor(playerX);
+	fragmentPushConstant.playerPosition[1] = (int)floor(playerY);
+	fragmentPushConstant.playerPosition[2] = (int)floor(playerZ);
+
+	glm_mat3x4_copy(tempMatrix, fragmentPushConstant.screanTranslation);
+	
 }
 
-
 void processInput(GLFWwindow* window) {
+	//get curser delta
+	static double lastPositionX, lastPositionY = 0;
+	if (!isPaused) {
+		double currentPositionX, currentPositionY;
+		glfwGetCursorPos(window, &currentPositionX, &currentPositionY);
+		curserDeltaX = (float)(currentPositionX - lastPositionX);
+		curserDeltaY = (float)(currentPositionY - lastPositionY);
+		lastPositionX = currentPositionX;
+		lastPositionY = currentPositionY;
+	}
+
+	//manage tab for pause/ unpause
+	static bool tabWasPresed = false;
+	bool tabIsPresed = glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS;
+	if (tabIsPresed & !tabWasPresed) {
+		if (isPaused) {
+			glfwSetCursorPos(window, 0.0, 0.0);
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			isPaused = false;
+		}
+		else {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			isPaused = true;
+		}
+		tabWasPresed = true;
+	}
+	else if (!tabIsPresed & tabWasPresed) {
+		tabWasPresed = false;
+	}
+
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, 1);
+	}
+	
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+		forwardIsPressed = true;
+	}
+	else {
+		forwardIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+		backwardIsPressed = true;
+	}
+	else {
+		backwardIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+		leftIsPressed = true;
+	}
+	else {
+		leftIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+		rightIsPressed = true;
+	}
+	else {
+		rightIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+		upIsPressed = true;
+	}
+	else {
+		upIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
+		downIsPressed = true;
+	}
+	else {
+		downIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+		slowIsPressed = true;
+	}
+	else {
+		slowIsPressed = false;
 	}
 }
 
@@ -455,13 +610,16 @@ void drawFrame() {
 void mainLoop() {
 	//show the previously hidden window.
 	glfwShowWindow(window);
-
+	if (glfwRawMouseMotionSupported()) {
+		glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+	}
+	 
+	
 	int frameCount = 0;
 	struct timespec timeStart, timeEnd;
 	int64_t elapsedTime = 0; //in nanoseconds
 	int64_t targetTime = (int64_t)((1 / targetFramesPerSecond) * 1e9);
 	bool skipWait = false;
-	float rotationsPerSecond = 5;
 	while (!glfwWindowShouldClose(window)) {
 		if (timespec_get(&timeStart, TIME_UTC) == 0) {
 			skipWait = true;
@@ -475,7 +633,7 @@ void mainLoop() {
 		glfwPollEvents();
 		drawFrame();
 		check();
-		gameStep(elapsedTime + max(0, (int64_t)round((targetTime - elapsedTime) / 1e6) * 1e6));
+		gameStep(elapsedTime + max(0, (int64_t)round((targetTime - elapsedTime) / 1e6) * 1e6)); //ignore - "warning C4244: 'function': conversion from 'double' to 'int64_t', possible loss of data"
 		check();
 
 		//debugLog("frame compleate:%d\n", frameCount);
@@ -494,6 +652,9 @@ void mainLoop() {
 
 		if(targetTime > elapsedTime) {
 			Sleep((int)round((targetTime - elapsedTime) / 1e6));
+		}
+		else {
+			debugLog("shit, out'a frames.\n");
 		}
 		
 	}

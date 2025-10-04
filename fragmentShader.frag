@@ -16,9 +16,10 @@ float fog = 1;
 float bright = float(0.625);
 float medium = float(0.5);
 float dark = float(0.25);
+float terainScale = 1.0 / 32;
 bool isOccupied(ivec3 position, uint16_t direction, int16_t directionSighn) {
     float returnColor;
-    if(cos((float(position[0]) + float(position[1])) * 0.0625 + 20.0) + cos((float(position[1]) + float(position[2])) * 0.0625 + 30.0) + cos((float(position[2]) + float(position[0])) * 0.0625 + 40.0) > 0.5) {
+    if(cos((float(position[0]) + float(position[1])) * terainScale + 20.0) + cos((float(position[1]) + float(position[2])) * terainScale + 30.0) + cos((float(position[2]) + float(position[0])) * terainScale + 40.0) > 0.5) {
         if(direction == 0) {
             returnColor = bright;
         }
@@ -71,12 +72,14 @@ void main() {
             medium = float(0.5); //1.0 - 
             dark = float(0.25);
         }
+        
     }
     else if(maxValue == abs(screenVector[1])) {
         xIndex = uint16_t(1);
         yIndex = uint16_t(0);
         zIndex = uint16_t(2);
         majorDirectionDirection = int16_t(sign(screenVector[1]));
+        
     }
     else if(maxValue == abs(screenVector[2])) {
         xIndex = uint16_t(2);
@@ -89,6 +92,7 @@ void main() {
             medium = float(1.0 - 0.5);
             dark = float(1.0 - 0.25);
         }
+        
     }
 
     screenVector /= maxValue;
@@ -132,16 +136,24 @@ void main() {
     
     ivec3 universalPosition = pcBuffer.playerPosition;
     //at any given moment a rays x coordinate is always an integer, these will store where the ray intersects the x = integer plane.
-    uint16_t xPose = uint16_t(0);
-    uint16_t yPose = uint16_t(0);
-    
+    uint16_t xPose = uint16_t((pcBuffer.screanTranslation[yIndex][3] * 32768.0) + ((1.0 - pcBuffer.screanTranslation[xIndex][3]) * float(xSlope)));
+    uint16_t yPose = uint16_t((pcBuffer.screanTranslation[zIndex][3] * 32768.0) + ((1.0 - pcBuffer.screanTranslation[xIndex][3]) * float(ySlope)));
+    if((pcBuffer.screanTranslation[zIndex][3] * 32768.0) + (pcBuffer.screanTranslation[xIndex][3] * float(ySlope)) >= 65536) {
+        outColor = vec4(1.0, 0.0, 1.0, 1.0);
+        return;
+    }
 
     //every iteration of this loop will step the x coordinate of the ray by 1.
-    for(int i = 0; i < 384; i++) {
-        fog *= 0.984375;
+    float fogConstant = 1.0 - (1.0 / 64);
+
+    for(int i = 0; i < 512; i++) {
+        fog *= fogConstant;
         //adds slope to intra-voxel position, will later check if the new position leaves the current voxel, if it does it checks all the potential voxels it intersected.
-        xPose = xPose + xSlope;
-        yPose = yPose + ySlope;
+        
+        if (xSlope >= 32768 || ySlope >= 32768) {
+            outColor = vec4(1.0, 0.0, 1.0, 1.0);
+            return;
+        }
 
         //i could explain this part, but i think it would be more funny if i didn't.
         if (xPose >= 32768 && yPose >= 32768) {
@@ -195,11 +207,13 @@ void main() {
         if(isOccupied(universalPosition, xIndex, int16_t(1))) {
             return;
         }
+        xPose = xPose + xSlope;
+        yPose = yPose + ySlope;
 
     }
 
     
     outColor = vec4(0.0, 0.0, 0.0, 1.0);
     
-
+    
 }
