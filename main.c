@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <GLFW/glfw3.h>
-#include <cglm/cglm.h> //fuck it, i'm making my own
+#include <cglm/cglm.h>
 #include <string.h>
 #include <math.h>
 #include <sys/stat.h>
@@ -335,7 +335,7 @@ void gameStep(int64_t stepNanoSeconds) {
 	static double playerZ = 100;
 	uint16_t playerSpeed;
 	if (slowIsPressed) {
-		playerSpeed = 1;
+		playerSpeed = 5;
 	}
 	else {
 		playerSpeed = 50;
@@ -631,10 +631,11 @@ void mainLoop() {
 
 		//record key presses made in the frame
 		glfwPollEvents();
-		drawFrame();
-		check();
 		gameStep(elapsedTime + max(0, (int64_t)round((targetTime - elapsedTime) / 1e6) * 1e6)); //ignore - "warning C4244: 'function': conversion from 'double' to 'int64_t', possible loss of data"
 		check();
+		drawFrame();
+		check();
+		
 
 		//debugLog("frame compleate:%d\n", frameCount);
 		frameCount++;
@@ -654,7 +655,7 @@ void mainLoop() {
 			Sleep((int)round((targetTime - elapsedTime) / 1e6));
 		}
 		else {
-			debugLog("shit, out'a frames.\n");
+			debugLog("shoot, out'a frames.\n");
 		}
 		
 	}
@@ -666,7 +667,7 @@ void mainLoop() {
 
 
 void userInput() {
-	printf("enter any letter to continue.\n");
+	printf("controlls:\nlightly suggest a program end---------------esc / alt+f4\nheavily suggest a program end-------------ctrl+shift+esc\npause/unpause----------------------------------------tab\nforward------------------------------------------------w\nbackward-----------------------------------------------s\nright--------------------------------------------------q\nleft---------------------------------------------------a\nup-------------------------------------------------space\ndown---------------------------------------------------c\nslow-----------------------------------------------shift\n\nany controls can be edited in the processInput function, enter any key to continue.\n");
 	char userInput;
 	scanf_s("%c", &userInput, 1);
 	
