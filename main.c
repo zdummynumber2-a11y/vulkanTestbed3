@@ -29,6 +29,7 @@ const uint32_t windowHeight = 1024;
 
 //this is horizontal FOV, vertical FOV is determined by this and the current dimensions of the window.
 float FOV = 126.87;
+//126.87
 
 bool playerIsImortal = false;
 
@@ -99,7 +100,7 @@ struct shaderCode {
 
 struct pushConstant {
 	mat3x4 screanTranslation;
-	ivec3 playerPosition;
+	uint32_t playerPosition[3];
 };
 
 //THE LIST.
@@ -140,7 +141,7 @@ struct pushConstant fragmentPushConstant = {
 		{0.0, 0.0, 1.0, 0.0}
 	},
 
-	{100, 100, 100}
+	{UINT16_MAX / 2, UINT16_MAX / 2, UINT16_MAX / 2}
 };
 
 //cant use sizeof because of padding along the way.
@@ -328,11 +329,11 @@ void gameStep(int64_t stepNanoSeconds) {
 		{0.0, 0.0, yScale, 0.0},
 		{0.0, 0.0, 0.0, 0.0}
 	};
-	glm_mul(fovMatrix, playerOrientation, tempMatrix);
+	glm_mul(playerOrientation, fovMatrix, tempMatrix);
 	
-	static double playerX = 100;
-	static double playerY = 100;
-	static double playerZ = 100;
+	static double playerX = UINT16_MAX / 2;
+	static double playerY = UINT16_MAX / 2;
+	static double playerZ = UINT16_MAX / 2;
 	uint16_t playerSpeed;
 	if (slowIsPressed) {
 		playerSpeed = 5;
@@ -342,34 +343,43 @@ void gameStep(int64_t stepNanoSeconds) {
 	}
 	
 	if (forwardIsPressed) {
-		playerX += playerSpeed * stepSeconds;
+		playerX += playerOrientation[0][0] * playerSpeed * stepSeconds;
+		playerY += playerOrientation[0][1] * playerSpeed * stepSeconds;
+		playerZ += playerOrientation[0][2] * playerSpeed * stepSeconds;
 	}
 	if (rightIsPressed) {
-		playerY += playerSpeed * stepSeconds;
+		playerX += playerOrientation[1][0] * playerSpeed * stepSeconds;
+		playerY += playerOrientation[1][1] * playerSpeed * stepSeconds;
+		playerZ += playerOrientation[1][2] * playerSpeed * stepSeconds;
 	}
 	if (upIsPressed) {
-		playerZ += playerSpeed * stepSeconds;
+		playerX += playerOrientation[2][0] * playerSpeed * stepSeconds;
+		playerY += playerOrientation[2][1] * playerSpeed * stepSeconds;
+		playerZ += playerOrientation[2][2] * playerSpeed * stepSeconds;
 	}
 	if (backwardIsPressed) {
-		playerX -= playerSpeed * stepSeconds;
+		playerX -= playerOrientation[0][0] * playerSpeed * stepSeconds;
+		playerY -= playerOrientation[0][1] * playerSpeed * stepSeconds;
+		playerZ -= playerOrientation[0][2] * playerSpeed * stepSeconds;
 	}
 	if (leftIsPressed) {
-		playerY -= playerSpeed * stepSeconds;
+		playerX -= playerOrientation[1][0] * playerSpeed * stepSeconds;
+		playerY -= playerOrientation[1][1] * playerSpeed * stepSeconds;
+		playerZ -= playerOrientation[1][2] * playerSpeed * stepSeconds;
 	}
 	if (downIsPressed) {
-		playerZ -= playerSpeed * stepSeconds;
+		playerX -= playerOrientation[2][0] * playerSpeed * stepSeconds;
+		playerY -= playerOrientation[2][1] * playerSpeed * stepSeconds;
+		playerZ -= playerOrientation[2][2] * playerSpeed * stepSeconds;
 	}
 	
-	//playerX += playerOrientation[0][0] * 25 * stepSeconds;
-	//playerY += playerOrientation[0][1] * 25 * stepSeconds;
-	//playerZ += playerOrientation[0][2] * 25 * stepSeconds;
 
-	tempMatrix[0][3] = fabs((float)fmod(playerX, 1));
-	tempMatrix[1][3] = fabs((float)fmod(playerY, 1));
-	tempMatrix[2][3] = fabs((float)fmod(playerZ, 1));
-	fragmentPushConstant.playerPosition[0] = (int)floor(playerX);
-	fragmentPushConstant.playerPosition[1] = (int)floor(playerY);
-	fragmentPushConstant.playerPosition[2] = (int)floor(playerZ);
+	tempMatrix[0][3] = (float)fmod(playerX, 1);
+	tempMatrix[1][3] = (float)fmod(playerY, 1);
+	tempMatrix[2][3] = (float)fmod(playerZ, 1);
+	fragmentPushConstant.playerPosition[0] = (uint32_t)floor(playerX);
+	fragmentPushConstant.playerPosition[1] = (uint32_t)floor(playerY);
+	fragmentPushConstant.playerPosition[2] = (uint32_t)floor(playerZ);
 
 	glm_mat3x4_copy(tempMatrix, fragmentPushConstant.screanTranslation);
 	

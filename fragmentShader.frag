@@ -1,11 +1,11 @@
 #version 450
 #extension GL_EXT_shader_explicit_arithmetic_types : require
-
+#define PI 3.141593
 layout(location = 0) out vec4 outColor;
 layout(location = 0) in vec2 fragColor;
 layout(push_constant) uniform PushConstants {
     mat3x4 screanTranslation;
-    ivec3 playerPosition;
+    uvec3 playerPosition;
 } pcBuffer;
 float fog = 1;
 
@@ -13,13 +13,28 @@ float fog = 1;
 
 //lol, i don't even know how to set up my own VkBuffer yet, so i just hardcoded whether a voxel is occupied with this 3d function.
 //this function was originally made for looking in +x exclucivly, these varyables allow to reset each faces shading based on what direction the ray is, these are the defaults.
+
+float ocilator (float x) {
+    return float(((6.0 * x - 9.0) * x + 3.0) * x);
+}
 float bright = float(0.625);
 float medium = float(0.5);
 float dark = float(0.25);
-float terainScale = 1.0 / 32;
-bool isOccupied(ivec3 position, uint16_t direction, int16_t directionSighn) {
+bool invertCollor = false;
+bool isOccupied(uvec3 position, uint16_t direction, int16_t directionSighn) {
     float returnColor;
-    if(cos((float(position[0]) + float(position[1])) * terainScale + 20.0) + cos((float(position[1]) + float(position[2])) * terainScale + 30.0) + cos((float(position[2]) + float(position[0])) * terainScale + 40.0) > 0.5) {
+    float terainScale = 1.0 / 128.0;
+    float downscaleFactor = 0.618034;
+    
+    //very basic noise function, probobly could have used perline noise but i'm using this instead
+    bool voxelOcupied =
+    ocilator(mod(float(position[0] + position[1]) * terainScale + 0.3, 1.0)) + 
+    ocilator(mod(float(position[1] + position[2]) * terainScale + 0.7, 1.0)) + 
+    ocilator(mod(float(position[2] + position[0]) * terainScale + 0.8, 1.0)) +
+    ocilator(mod(float(position[0]) * terainScale * downscaleFactor + 0.7, 1.0)) + 
+    ocilator(mod(float(position[1]) * terainScale * downscaleFactor + 0.8, 1.0)) + 
+    ocilator(mod(float(position[2]) * terainScale * downscaleFactor + 0.3, 1.0)) > 0.0;
+    if(voxelOcupied) {
         if(direction == 0) {
             returnColor = bright;
         }
@@ -34,24 +49,29 @@ bool isOccupied(ivec3 position, uint16_t direction, int16_t directionSighn) {
         return true;
         }
 
-        if(directionSighn == -1) {
-            returnColor = 1.0 - returnColor;
+        if((directionSighn == -1)) {
+            returnColor = (1.0 - returnColor) * fog;
+        }
+        else {
+            returnColor = returnColor * fog;
+        }
+        if (invertCollor) {
+        returnColor = 1.0 - returnColor;
         }
 
-        outColor = vec4(returnColor * fog, returnColor * fog, returnColor * fog, 1.0);
+        outColor = vec4(returnColor, returnColor, returnColor, 1.0);
         return true;
     }
     return false;
 }
 
 void main() {
-    //mat3 screenTranslation = {
-    //{1.0, 0.0, 0.0},
-    //{0.0, 2.0, 0.0},
-    //{0.0, 0.0, 2.0}
-    //};
+    
     
     vec3 screenVector = {1, 2 * fragColor[0] - 1, 2 * fragColor[1] - 1};
+    if(screenVector[1] * screenVector[1] + screenVector[2] * screenVector[2] < 0.0005) {
+        invertCollor = true;
+    }
     //screanTranslation is a 3X4 matrix, it needs to be this way because of stupid padding rules because programers hate the number 3. i dont know if strait multiplying it here will break anything in the future.
     //i just asume when i convert to mat3 it just deleats the last collumn. i eventually plan to use the last 3 floats for the players intravoxel position.
     screenVector = mat3(pcBuffer.screanTranslation) * screenVector;
@@ -134,10 +154,34 @@ void main() {
     
     
     
-    ivec3 universalPosition = pcBuffer.playerPosition;
-    //at any given moment a rays x coordinate is always an integer, these will store where the ray intersects the x = integer plane.
-    uint16_t xPose = uint16_t((pcBuffer.screanTranslation[yIndex][3] * 32768.0) + ((1.0 - pcBuffer.screanTranslation[xIndex][3]) * float(xSlope)));
-    uint16_t yPose = uint16_t((pcBuffer.screanTranslation[zIndex][3] * 32768.0) + ((1.0 - pcBuffer.screanTranslation[xIndex][3]) * float(ySlope)));
+    uvec3 universalPosition = pcBuffer.playerPosition;
+    //this number is not acounting for the players y and z coordanits
+    uint16_t xPose;
+    uint16_t yPose;
+    if(majorDirectionDirection == 1) {
+        xPose = uint16_t(((1.0 - pcBuffer.screanTranslation[xIndex][3]) * float(xSlope)));
+        yPose = uint16_t(((1.0 - pcBuffer.screanTranslation[xIndex][3]) * float(ySlope)));
+    }
+    else {
+        xPose = uint16_t(((pcBuffer.screanTranslation[xIndex][3]) * float(xSlope)));
+        yPose = uint16_t(((pcBuffer.screanTranslation[xIndex][3]) * float(ySlope)));
+    }
+    
+
+
+    if(xDirection == -1) {
+        xPose += uint16_t(((1.0 - pcBuffer.screanTranslation[yIndex][3]) * 32768.0)); 
+    }
+    else {
+        xPose += uint16_t(((pcBuffer.screanTranslation[yIndex][3]) * 32768.0));
+    }
+    if(yDirection == -1) {
+        yPose += uint16_t(((1.0 - pcBuffer.screanTranslation[zIndex][3]) * 32768.0)); 
+    }
+    else {
+        yPose += uint16_t(((pcBuffer.screanTranslation[zIndex][3]) * 32768.0));
+    }
+
     if((pcBuffer.screanTranslation[zIndex][3] * 32768.0) + (pcBuffer.screanTranslation[xIndex][3] * float(ySlope)) >= 65536) {
         outColor = vec4(1.0, 0.0, 1.0, 1.0);
         return;
