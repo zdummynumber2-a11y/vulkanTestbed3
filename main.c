@@ -28,7 +28,7 @@ const uint32_t windowWidth = 1024;
 const uint32_t windowHeight = 1024;
 
 //this is horizontal FOV, vertical FOV is determined by this and the current dimensions of the window.
-float FOV = 126.87;
+float FOV = 105.0;
 //126.87
 
 bool playerIsImortal = false;
@@ -144,7 +144,7 @@ struct pushConstant fragmentPushConstant = {
 	{UINT16_MAX / 2, UINT16_MAX / 2, UINT16_MAX / 2}
 };
 
-//cant use sizeof because of padding along the way.
+//i should be able to use UINT32_MAX, but i ran into overflow errors in the fragment shader, for now this will sufice.
 
 
 
@@ -677,7 +677,7 @@ void mainLoop() {
 
 
 void userInput() {
-	printf("controlls:\nlightly suggest a program end---------------esc / alt+f4\nheavily suggest a program end-------------ctrl+shift+esc\npause/unpause----------------------------------------tab\nforward------------------------------------------------w\nbackward-----------------------------------------------s\nright--------------------------------------------------q\nleft---------------------------------------------------a\nup-------------------------------------------------space\ndown---------------------------------------------------c\nslow-----------------------------------------------shift\n\nany controls can be edited in the processInput function, enter any key to continue.\n");
+	printf("controls:\nlightly suggest a program end---------------esc / alt+f4\nheavily suggest a program end-------------ctrl+shift+esc\npause/unpause----------------------------------------tab\nforward------------------------------------------------w\nbackward-----------------------------------------------s\nright--------------------------------------------------q\nleft---------------------------------------------------a\nup-------------------------------------------------space\ndown---------------------------------------------------c\nslow-----------------------------------------------shift\n\nany controls can be edited in the processInput function, enter any key to continue.\n");
 	char userInput;
 	scanf_s("%c", &userInput, 1);
 	
