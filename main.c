@@ -488,6 +488,7 @@ void gameStep(int64_t stepNanoSeconds) {
 	fragmentPushConstant.intraVoxelPos[0] = (float)fmod(playerX, 1);
 	fragmentPushConstant.intraVoxelPos[1] = (float)fmod(playerY, 1);
 	fragmentPushConstant.intraVoxelPos[2] = (float)fmod(playerZ, 1);
+	fragmentPushConstant.intraVoxelPos[3] = aspectRatio;
 	
 	for (int i = 0; i < 3; i++) {
 		for (int l = 0; l < 3; l++) {
