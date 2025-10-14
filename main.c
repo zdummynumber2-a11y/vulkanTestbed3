@@ -390,7 +390,6 @@ bool rightIsPressed;
 bool upIsPressed;
 bool downIsPressed;
 bool slowIsPressed;
-bool yawRecenterPressed;
 void gameStep(int64_t stepNanoSeconds) {
 	if (isPaused) {
 		return;
@@ -425,24 +424,6 @@ void gameStep(int64_t stepNanoSeconds) {
 	yl_mat3_mul(renderMatrix, playerOrientation, &tempMatrix);
 	yl_mat3_copy(tempMatrix, &renderMatrix);
 	
-	if (1.0 + (playerOrientation[0][0] / playerOrientation[1][0]) * (playerOrientation[0][0] / playerOrientation[1][0]) < 0) {
-		erru = (errorState){ runtimeErr, "fucking hell" };
-		return;
-	}
-	float a = 1.0 / sqrt(1.0 + (playerOrientation[0][0] / playerOrientation[1][0]) * (playerOrientation[0][0] / playerOrientation[1][0]));
-	float b = 1.0 / sqrt(1.0 + (playerOrientation[1][0] / playerOrientation[0][0]) * (playerOrientation[1][0] / playerOrientation[0][0]));
-	float relativeYawCos = a * playerOrientation[0][1] + b * playerOrientation[1][1];
-	float relativeYawSin = a * playerOrientation[0][2] + b * playerOrientation[1][2];
-	if (yawRecenterPressed) {
-		yl_mat3 adjustment = {
-			{1.0, 0.0, 0.0},
-			{0.0, relativeYawCos, -relativeYawSin},
-			{0.0, relativeYawSin, relativeYawCos}
-		};
-		yl_mat3_mul(adjustment, playerOrientation, &tempMatrix);
-		yl_mat3_copy(tempMatrix, &playerOrientation);
-	}
-
 
 	static double playerX = START_POS;
 	static double playerY = START_POS;
@@ -513,10 +494,6 @@ void gameStep(int64_t stepNanoSeconds) {
 			fragmentPushConstant.screanTranslation[i][l] = renderMatrix[i][l];
 		}
 	}
-	fragmentPushConstant.screanTranslation[0][3] = playerOrientation[0][2];
-	fragmentPushConstant.screanTranslation[1][3] = relativeYawCos;
-	fragmentPushConstant.screanTranslation[2][3] = relativeYawSin;
-	fragmentPushConstant.intraVoxelPos[3] = aspectRatio;
 }
 
 void processInput(GLFWwindow* window) {
@@ -597,12 +574,6 @@ void processInput(GLFWwindow* window) {
 	}
 	else {
 		slowIsPressed = false;
-	}
-	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
-		yawRecenterPressed = true;
-	}
-	else {
-		yawRecenterPressed = false;
 	}
 }
 

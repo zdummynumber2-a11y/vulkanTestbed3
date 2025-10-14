@@ -67,27 +67,7 @@ bool isOccupied(uvec3 position, uint16_t direction, int16_t directionSighn) {
     return false;
 }
 
-bool orientationSphere(float screenX, float screenY) {
-    float centeredX = screenX * 10 + 8.0;
-    float centeredY = screenY * 10 + 7.0 * pcBuffer.intraVoxelPos[3];
-    float rotatedX = pcBuffer.screanTranslation[2][3] * centeredY - pcBuffer.screanTranslation[1][3] * centeredX;
-    float rotatedY = pcBuffer.screanTranslation[1][3] * centeredY + pcBuffer.screanTranslation[2][3] * centeredX;
-    if (centeredX * centeredX + centeredY * centeredY < 1.0) {
-        bool sphereSide = rotatedY >= pcBuffer.screanTranslation[0][3] * sqrt(1.0 - rotatedX * rotatedX);
-        if(sphereSide) {
-            outColor = vec4(0.5, 0.5, 0.0, 1.0);
-            return true;
-        }
-        else {
-            outColor = vec4(0.0, 0.5, 0.5, 1.0);
-            return true;
-        }
-        
-    }
-    else {
-        return false;
-    }
-}
+
 
 void main() {
     uvec3 testVector = {131072, 0, 0};
@@ -102,9 +82,7 @@ void main() {
     if(screenX * screenX + screenY * screenY < 0.0002) {
         invertCollor = true;
     }
-    if(orientationSphere(screenX, screenY)) {
-        return;
-    }
+    
     
     //screanTranslation is a 3X4 matrix, it needs to be this way because of stupid padding rules because programers hate the number 3. i dont know if strait multiplying it here will break anything in the future.
     //i just asume when i convert to mat3 it just deleats the last collumn. i eventually plan to use the last 3 floats for the players intravoxel position.
