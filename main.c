@@ -1,17 +1,19 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h> //it seems like this should be in the standard library
+#include <stdarg.h>
+#include <math.h>
+
+#include <stdint.h>
+#include <time.h>
+#include <sys/stat.h>
+
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
-#include <stdio.h>
-#include <time.h>
 #include <windows.h>
 #undef APIENTRY
-#include <stdint.h>
-#include <stdlib.h>
 #include <GLFW/glfw3.h>
-#include <cglm/cglm.h>
-#include <string.h>
-#include <math.h>
-#include <sys/stat.h>
-#include <stdarg.h>
+
 
 #define MAX_FRAMES_IN_FLIGHT 2
 #define PI 3.14159
@@ -28,14 +30,18 @@ const uint32_t windowWidth = 1024;
 const uint32_t windowHeight = 1024;
 
 //this is horizontal FOV, vertical FOV is determined by this and the current dimensions of the window.
-float FOV = 90.0;
+float FOV = 105.0;
+//126.87
 
 bool playerIsImortal = false;
 
 //1 voxel is noposed to be 1 meter.
 float gravity = (float)9.8;
+float forwardsDragConstant = 1.0 / 4096.0;
+float sidewaysDragConstant = 32.0 / 4096.0;
+float verticalDragConstant = 256.0 / 4096.0;
 
-float targetFramesPerSecond = 64.0;
+float targetFramesPerSecond = 60.0;
 
 
 
@@ -98,8 +104,9 @@ struct shaderCode {
 };
 
 struct pushConstant {
-	mat3x4 screanTranslation;
-	ivec3 playerPosition;
+	float screanTranslation[3][4];
+	float intraVoxelPos[4];
+	uint32_t playerPosition[3];
 };
 
 //THE LIST.
@@ -132,17 +139,19 @@ VkSemaphore* imageAvailableSemaphores = NULL;
 VkSemaphore* renderFinishedSemaphores = NULL; // allocated in createSyncObjects
 VkFence* inFlightFences = NULL;
 bool framebufferResized = false;
+struct pushConstant fragmentPushConstant;
+#define START_POS 0x001fffff //places player at the center of the non-farlands regeion, some presets can be found in the readme
 struct pushConstant fragmentPushConstant = {
 	{
 		{1.0, 0.0, 0.0, 0.0},
-		{0.0, 2.0, 0.0, 0.0},
-		{0.0, 0.0, 2.0, 0.0}
+		{0.0, 1.0, 0.0, 1.0},
+		{0.0, 0.0, 1.0, 0.0}
 	},
-
-	{80, -20, -6}
+	{0.0, 0.0, 0.0, 1.0},
+	{START_POS, START_POS, START_POS}
 };
 
-//cant use sizeof because of padding along the way.
+//i should be able to use UINT32_MAX, but i ran into overflow errors in the fragment shader, for now this will sufice.
 
 
 
@@ -175,9 +184,94 @@ const bool enableValidationLayers = true;
 #endif
 
 
+typedef float yl_vec3[3];
+typedef yl_vec3 yl_mat3[3];
 
+typedef float yl_vec2[2];
+typedef yl_vec2 yl_mat2[2];
 
+#define YL_MAT3_IDENTITY_INIT {{1.0f, 0.0f, 0.0f}, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }}
+#define YL_MAT2_IDENTITY_INIT {{1.0f, 0.0f}, { 0.0f, 1.0f }}
 
+void yl_vec3_dot(yl_vec3 vec1, yl_vec3 vec2, float* location) {
+	*location = vec1[0] * vec2[0] + vec1[1] * vec2[1] + vec1[2] * vec2[2];
+}
+
+void yl_vec3_normalize(yl_vec3 inputVecotr, yl_vec3* location) {
+	float adjustment = (float)(1.0 / sqrt(inputVecotr[0] * inputVecotr[0] + inputVecotr[1] * inputVecotr[1] + inputVecotr[2] * inputVecotr[2]));
+	for (int i = 0; i < 3; i++) {
+		(*location)[i] = inputVecotr[i] * adjustment;
+	}
+}
+
+void yl_mat3_transpose(yl_mat3 inputMatrix, yl_mat3* location) {
+	//made with intention of compiler unroling
+	for (int i = 0; i < 3; i++) {
+		for (int l = 0; l < 3; l++) {
+			(*location)[i][l] = inputMatrix[l][i];
+		}
+	}
+}
+
+void yl_mat3_copy(yl_mat3 inputMatrix, yl_mat3* location) {
+	for (int i = 0; i < 3; i++) {
+		for (int l = 0; l < 3; l++) {
+			(*location)[i][l] = inputMatrix[i][l];
+		}
+	}
+}
+
+void yl_vec3_copy(yl_vec3 inputvector, yl_vec3* location) {
+	for (int i = 0; i < 3; i++) {
+		(*location)[i] = inputvector[i];
+	}
+}
+
+void yl_mat3_mulv(yl_mat3 opperatorMatrix, yl_vec3 opperandVector, yl_vec3* location) {
+	for (int i = 0; i < 3; i++) {
+		(*location)[i] = opperandVector[0] * opperatorMatrix[0][i] + opperandVector[1] * opperatorMatrix[1][i] + opperandVector[2] * opperatorMatrix[2][i];
+	}
+}
+
+void yl_mat3_mul(yl_mat3 opperandMatrix, yl_mat3 opperatorMatrix, yl_mat3* location) {
+	for (int i = 0; i < 3; i++) {
+		for (int l = 0; l < 3; l++) {
+			(*location)[i][l] = opperandMatrix[i][0] * opperatorMatrix[0][l] + opperandMatrix[i][1] * opperatorMatrix[1][l] + opperandMatrix[i][2] * opperatorMatrix[2][l];
+		}
+	}
+}
+
+void yl_xRotateMat3(yl_mat3 inputMatrix, float angle, yl_mat3* location) {
+	yl_mat3 rotationMatrix = {
+		{1.0, 0.0, 0.0},
+		{0.0, (float)cos(angle), (float)sin(angle)},
+		{0.0, -(float)sin(angle), (float)cos(angle)}
+	};
+	yl_mat3_mul(inputMatrix, rotationMatrix, location);
+}
+
+void yl_yRotateMat3(yl_mat3 inputMatrix, float angle, yl_mat3* location) {
+	yl_mat3 rotationMatrix = {
+		{(float)cos(angle), 0.0, -(float)sin(angle)},
+		{0.0, 1.0, 0.0},
+		{(float)sin(angle), 0.0, (float)cos(angle)}
+	};
+	yl_mat3_mul(inputMatrix, rotationMatrix, location);
+}
+
+void yl_zRotateMat3(yl_mat3 inputMatrix, float angle, yl_mat3* location) {
+	yl_mat3 rotationMatrix = {
+		{(float)cos(angle), (float)sin(angle), 0.0},
+		{-(float)sin(angle), (float)cos(angle), 0.0},
+		{0.0, 0.0, 1.0}
+	};
+	yl_mat3_mul(inputMatrix, rotationMatrix, location);
+}
+
+void yl_vec2Rotate(yl_vec2 inputVector, float angle, yl_vec2* location) {
+	(*location)[0] = inputVector[0] * cos(angle) - inputVector[1] * sin(angle);
+	(*location)[1] = inputVector[0] * sin(angle) + inputVector[1] * cos(angle);
+}
 
 
 
@@ -286,16 +380,200 @@ void check() {
 }
 
 
+bool isPaused = true;
+float curserDeltaX;
+float curserDeltaY;
+bool forwardIsPressed;
+bool backwardIsPressed;
+bool leftIsPressed;
+bool rightIsPressed;
+bool upIsPressed;
+bool downIsPressed;
+bool slowIsPressed;
 void gameStep(int64_t stepNanoSeconds) {
-	vec3 rotationAxis = { 0.14121, 1.0, 0.618034 };
-	float rotationsPerSecond = 0.5;
-	glm_rotate(fragmentPushConstant.screanTranslation, rotationsPerSecond * 2 * PI * ((float)stepNanoSeconds / 1e9), rotationAxis);
+	if (isPaused) {
+		return;
+	}
+	yl_mat3 tempMatrix = YL_MAT3_IDENTITY_INIT;
+	yl_vec3 tempVector = { 0.0, 0.0, 0.0 };
+	yl_vec2 tempVec2 = { 0.0, 0.0 };
+	
+	double stepSeconds = stepNanoSeconds / 1e9;
+	static float xScale = 1;
+	static float aspectRatio = 1;
+	static float yScale = 1;
+
+	xScale = (float)tan(FOV * PI / 360); // window width.
+	aspectRatio = (float)swapChainExtent.height / swapChainExtent.width;
+	yScale = aspectRatio * xScale;
+	yl_mat3 renderMatrix = {
+		{1.0, 0.0, 0.0},
+		{0.0, xScale, 0.0},
+		{0.0, 0.0, yScale}
+	};
+
+	
+	
+	static yl_mat3 playerOrientation = YL_MAT3_IDENTITY_INIT;
+	yl_mat3 playerRotationDelta = YL_MAT3_IDENTITY_INIT;
+	yl_xRotateMat3(playerRotationDelta, curserDeltaX / 512, &tempMatrix);
+	yl_yRotateMat3(tempMatrix, curserDeltaY / 512, &playerRotationDelta);
+
+	yl_mat3_mul(playerRotationDelta, playerOrientation, &tempMatrix);
+	yl_mat3_copy(tempMatrix, &playerOrientation);
+	yl_mat3_mul(renderMatrix, playerOrientation, &tempMatrix);
+	yl_mat3_copy(tempMatrix, &renderMatrix);
+	
+
+	static double playerX = START_POS;
+	static double playerY = START_POS;
+	static double playerZ = START_POS;
+	float playerSpeed;
+	if (slowIsPressed) {
+		playerSpeed = 50.0;
+	}
+	else {
+		playerSpeed = 10.0;
+	}
+
+	yl_vec3 accelerationDirection = {0.0, 0.0, 0.0};
+	static yl_vec3 velocityDirection = {0.0, 0.0, 0.0};
+	if (forwardIsPressed) {
+		accelerationDirection[0] += 1;
+	}
+	if (rightIsPressed) {
+		accelerationDirection[1] += 1;
+	}
+	if (upIsPressed) {
+		accelerationDirection[2] += 1;
+	}
+	if (backwardIsPressed) {
+		accelerationDirection[0] -= 1;
+	}
+	if (leftIsPressed) {
+		accelerationDirection[1] -= 1;
+	}
+	if (downIsPressed) {
+		accelerationDirection[2] -= 1;
+	}
+	yl_mat3_mulv(playerOrientation, accelerationDirection, &tempVector);
+	yl_vec3_copy(tempVector, &accelerationDirection);
+
+	yl_vec3 dragForce;
+	//these two take the player velocity and translate it into the players point of veiwand stores it in tempVector
+	yl_mat3_transpose(playerOrientation, &tempMatrix);
+	yl_mat3_mulv(tempMatrix, velocityDirection, &tempVector);
+	float totalVelocity = (float)sqrt(velocityDirection[0] * velocityDirection[0] + velocityDirection[1] * velocityDirection[1] + velocityDirection[2] * velocityDirection[2]);
+
+	tempVector[0] = (float)(totalVelocity * tempVector[0] * forwardsDragConstant);
+	tempVector[1] = (float)(totalVelocity * tempVector[1] * sidewaysDragConstant);
+	tempVector[2] = (float)(totalVelocity * tempVector[2] * verticalDragConstant);
+
+	yl_mat3_mulv(playerOrientation, tempVector, &dragForce);
+
+	velocityDirection[0] += (float)((accelerationDirection[0] * playerSpeed - dragForce[0]) * stepSeconds);
+	velocityDirection[1] += (float)((accelerationDirection[1] * playerSpeed - dragForce[1]) * stepSeconds);
+	velocityDirection[2] += (float)((accelerationDirection[2] * playerSpeed - dragForce[2] - gravity) * stepSeconds);
+
+	playerX += velocityDirection[0] * stepSeconds;
+	playerY += velocityDirection[1] * stepSeconds;
+	playerZ += velocityDirection[2] * stepSeconds;
+	debugLog("speed: %f\n", totalVelocity);
+
+	
+	
+	fragmentPushConstant.playerPosition[0] = (uint32_t)floor(playerX);
+	fragmentPushConstant.playerPosition[1] = (uint32_t)floor(playerY);
+	fragmentPushConstant.playerPosition[2] = (uint32_t)floor(playerZ);
+	fragmentPushConstant.intraVoxelPos[0] = (float)fmod(playerX, 1);
+	fragmentPushConstant.intraVoxelPos[1] = (float)fmod(playerY, 1);
+	fragmentPushConstant.intraVoxelPos[2] = (float)fmod(playerZ, 1);
+	
+	for (int i = 0; i < 3; i++) {
+		for (int l = 0; l < 3; l++) {
+			fragmentPushConstant.screanTranslation[i][l] = renderMatrix[i][l];
+		}
+	}
 }
 
-
 void processInput(GLFWwindow* window) {
+	//get curser delta
+	static double lastPositionX, lastPositionY = 0;
+	if (!isPaused) {
+		double currentPositionX, currentPositionY;
+		glfwGetCursorPos(window, &currentPositionX, &currentPositionY);
+		curserDeltaX = (float)(currentPositionX - lastPositionX);
+		curserDeltaY = (float)(currentPositionY - lastPositionY);
+		lastPositionX = currentPositionX;
+		lastPositionY = currentPositionY;
+	}
+
+	//manage tab for pause/ unpause
+	static bool tabWasPresed = false;
+	bool tabIsPresed = glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS;
+	if (tabIsPresed & !tabWasPresed) {
+		if (isPaused) {
+			glfwSetCursorPos(window, 0.0, 0.0);
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			lastPositionX = 0;
+			lastPositionY = 0;
+			isPaused = false;
+		}
+		else {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+			isPaused = true;
+		}
+		tabWasPresed = true;
+	}
+	else if (!tabIsPresed & tabWasPresed) {
+		tabWasPresed = false;
+	}
+
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, 1);
+	}
+	
+	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+		forwardIsPressed = true;
+	}
+	else {
+		forwardIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+		backwardIsPressed = true;
+	}
+	else {
+		backwardIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+		leftIsPressed = true;
+	}
+	else {
+		leftIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+		rightIsPressed = true;
+	}
+	else {
+		rightIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+		upIsPressed = true;
+	}
+	else {
+		upIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
+		downIsPressed = true;
+	}
+	else {
+		downIsPressed = false;
+	}
+	if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+		slowIsPressed = true;
+	}
+	else {
+		slowIsPressed = false;
 	}
 }
 
@@ -455,13 +733,16 @@ void drawFrame() {
 void mainLoop() {
 	//show the previously hidden window.
 	glfwShowWindow(window);
-
+	if (glfwRawMouseMotionSupported()) {
+		glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+	}
+	 
+	
 	int frameCount = 0;
 	struct timespec timeStart, timeEnd;
 	int64_t elapsedTime = 0; //in nanoseconds
 	int64_t targetTime = (int64_t)((1 / targetFramesPerSecond) * 1e9);
 	bool skipWait = false;
-	float rotationsPerSecond = 5;
 	while (!glfwWindowShouldClose(window)) {
 		if (timespec_get(&timeStart, TIME_UTC) == 0) {
 			skipWait = true;
@@ -473,10 +754,11 @@ void mainLoop() {
 
 		//record key presses made in the frame
 		glfwPollEvents();
+		gameStep(elapsedTime + max(0, (int64_t)(round((targetTime - elapsedTime) / 1e6) * 1e6))); //ignore - "warning C4244: 'function': conversion from 'double' to 'int64_t', possible loss of data"
+		check();
 		drawFrame();
 		check();
-		gameStep(elapsedTime + max(0, (int64_t)round((targetTime - elapsedTime) / 1e6) * 1e6));
-		check();
+		
 
 		//debugLog("frame compleate:%d\n", frameCount);
 		frameCount++;
@@ -495,6 +777,9 @@ void mainLoop() {
 		if(targetTime > elapsedTime) {
 			Sleep((int)round((targetTime - elapsedTime) / 1e6));
 		}
+		else {
+			debugLog("shoot, out'a frames.\n");
+		}
 		
 	}
 
@@ -505,7 +790,7 @@ void mainLoop() {
 
 
 void userInput() {
-	printf("enter any letter to continue.\n");
+	printf("controls:\nlightly suggest a program end---------------esc / alt+f4\nheavily suggest a program end-------------ctrl+shift+esc\npause/unpause----------------------------------------tab\nforward------------------------------------------------w\nbackward-----------------------------------------------s\nright--------------------------------------------------q\nleft---------------------------------------------------a\nup-------------------------------------------------space\ndown---------------------------------------------------c\nslow-----------------------------------------------shift\n\nhorizontal mouse movement controlls roll instead of yaw. any controls can be edited in the processInput function, enter any key to continue.\n");
 	char userInput;
 	scanf_s("%c", &userInput, 1);
 	
