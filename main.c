@@ -46,7 +46,7 @@ float forwardsDragConstant = 32.0 / 4096.0;
 float sidewaysDragConstant = 32.0 / 4096.0;
 float verticalDragConstant = 32.0 / 4096.0;*/
 
-float targetFramesPerSecond = 350.0;
+float targetFramesPerSecond = 3500.0;
 
 
 
@@ -489,7 +489,7 @@ void gameStep(int64_t stepNanoSeconds) {
 	playerX += velocityDirection[0] * stepSeconds;
 	playerY += velocityDirection[1] * stepSeconds;
 	playerZ += velocityDirection[2] * stepSeconds;
-	debugLog("speed: %f\n", totalVelocity);
+	//debugLog("speed: %f\n", totalVelocity);
 
 	
 	
@@ -817,6 +817,7 @@ void mainLoop() {
 		}
 
 		elapsedTime = (int64_t)((timeEnd.tv_sec - timeStart.tv_sec) * 1e9 + timeEnd.tv_nsec - timeStart.tv_nsec);
+		//debugLog("frame time: %f milliseconds\n", elapsedTime / 1e6);
 
 		if(targetTime > elapsedTime) {
 			Sleep((int)round((targetTime - elapsedTime) / 1e6));
