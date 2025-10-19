@@ -41,7 +41,12 @@ float forwardsDragConstant = 1.0 / 4096.0;
 float sidewaysDragConstant = 32.0 / 4096.0;
 float verticalDragConstant = 256.0 / 4096.0;
 
-float targetFramesPerSecond = 60.0;
+/*float gravity = (float)0.0;
+float forwardsDragConstant = 32.0 / 4096.0;
+float sidewaysDragConstant = 32.0 / 4096.0;
+float verticalDragConstant = 32.0 / 4096.0;*/
+
+float targetFramesPerSecond = 350.0;
 
 
 
@@ -229,7 +234,7 @@ void yl_vec3_copy(yl_vec3 inputvector, yl_vec3* location) {
 
 void yl_mat3_mulv(yl_mat3 opperatorMatrix, yl_vec3 opperandVector, yl_vec3* location) {
 	for (int i = 0; i < 3; i++) {
-		(*location)[i] = opperandVector[0] * opperatorMatrix[0][i] + opperandVector[1] * opperatorMatrix[1][i] + opperandVector[2] * opperatorMatrix[2][i];
+		(*location)[i] = opperandVector[0] * opperatorMatrix[i][0] + opperandVector[1] * opperatorMatrix[i][1] + opperandVector[2] * opperatorMatrix[i][2];
 	}
 }
 
@@ -244,8 +249,8 @@ void yl_mat3_mul(yl_mat3 opperandMatrix, yl_mat3 opperatorMatrix, yl_mat3* locat
 void yl_xRotateMat3(yl_mat3 inputMatrix, float angle, yl_mat3* location) {
 	yl_mat3 rotationMatrix = {
 		{1.0, 0.0, 0.0},
-		{0.0, (float)cos(angle), (float)sin(angle)},
-		{0.0, -(float)sin(angle), (float)cos(angle)}
+		{0.0, (float)cos(angle), -(float)sin(angle)},
+		{0.0, (float)sin(angle), (float)cos(angle)}
 	};
 	yl_mat3_mul(inputMatrix, rotationMatrix, location);
 }
@@ -381,6 +386,7 @@ void check() {
 
 
 bool isPaused = true;
+bool isInflight = false;
 float curserDeltaX;
 float curserDeltaY;
 bool forwardIsPressed;
@@ -394,6 +400,7 @@ void gameStep(int64_t stepNanoSeconds) {
 	if (isPaused) {
 		return;
 	}
+	
 	yl_mat3 tempMatrix = YL_MAT3_IDENTITY_INIT;
 	yl_vec3 tempVector = { 0.0, 0.0, 0.0 };
 	yl_vec2 tempVec2 = { 0.0, 0.0 };
@@ -407,22 +414,24 @@ void gameStep(int64_t stepNanoSeconds) {
 	aspectRatio = (float)swapChainExtent.height / swapChainExtent.width;
 	yScale = aspectRatio * xScale;
 	yl_mat3 renderMatrix = {
-		{1.0, 0.0, 0.0},
-		{0.0, xScale, 0.0},
-		{0.0, 0.0, yScale}
+		{xScale, 0.0, 0.0},
+		{0.0, yScale, 0.0},
+		{0.0, 0.0, 1.0}
 	};
 
 	
 	
 	static yl_mat3 playerOrientation = YL_MAT3_IDENTITY_INIT;
 	yl_mat3 playerRotationDelta = YL_MAT3_IDENTITY_INIT;
-	yl_xRotateMat3(playerRotationDelta, curserDeltaX / 512, &tempMatrix);
-	yl_yRotateMat3(tempMatrix, curserDeltaY / 512, &playerRotationDelta);
+	yl_zRotateMat3(playerRotationDelta, curserDeltaX / 512, &tempMatrix);
+	yl_xRotateMat3(tempMatrix, curserDeltaY / 512, &playerRotationDelta);
 
-	yl_mat3_mul(playerRotationDelta, playerOrientation, &tempMatrix);
+	yl_mat3_mul(playerOrientation, playerRotationDelta, &tempMatrix);
 	yl_mat3_copy(tempMatrix, &playerOrientation);
-	yl_mat3_mul(renderMatrix, playerOrientation, &tempMatrix);
+	yl_mat3_mul(playerOrientation, renderMatrix, &tempMatrix);
 	yl_mat3_copy(tempMatrix, &renderMatrix);
+
+	
 	
 
 	static double playerX = START_POS;
@@ -439,23 +448,25 @@ void gameStep(int64_t stepNanoSeconds) {
 	yl_vec3 accelerationDirection = {0.0, 0.0, 0.0};
 	static yl_vec3 velocityDirection = {0.0, 0.0, 0.0};
 	if (forwardIsPressed) {
-		accelerationDirection[0] += 1;
-	}
-	if (rightIsPressed) {
-		accelerationDirection[1] += 1;
-	}
-	if (upIsPressed) {
 		accelerationDirection[2] += 1;
 	}
-	if (backwardIsPressed) {
-		accelerationDirection[0] -= 1;
+	if (upIsPressed) {
+		accelerationDirection[1] += 1;
 	}
 	if (leftIsPressed) {
-		accelerationDirection[1] -= 1;
+		accelerationDirection[0] += 1;
 	}
-	if (downIsPressed) {
+	if (backwardIsPressed) {
 		accelerationDirection[2] -= 1;
 	}
+	if (downIsPressed) {
+		accelerationDirection[1] -= 1;
+	}
+	if (rightIsPressed) {
+		accelerationDirection[0] -= 1;
+	}
+	
+	
 	yl_mat3_mulv(playerOrientation, accelerationDirection, &tempVector);
 	yl_vec3_copy(tempVector, &accelerationDirection);
 
@@ -465,15 +476,15 @@ void gameStep(int64_t stepNanoSeconds) {
 	yl_mat3_mulv(tempMatrix, velocityDirection, &tempVector);
 	float totalVelocity = (float)sqrt(velocityDirection[0] * velocityDirection[0] + velocityDirection[1] * velocityDirection[1] + velocityDirection[2] * velocityDirection[2]);
 
-	tempVector[0] = (float)(totalVelocity * tempVector[0] * forwardsDragConstant);
-	tempVector[1] = (float)(totalVelocity * tempVector[1] * sidewaysDragConstant);
-	tempVector[2] = (float)(totalVelocity * tempVector[2] * verticalDragConstant);
+	tempVector[0] = (float)(totalVelocity * tempVector[0] * sidewaysDragConstant);
+	tempVector[1] = (float)(totalVelocity * tempVector[1] * verticalDragConstant);
+	tempVector[2] = (float)(totalVelocity * tempVector[2] * forwardsDragConstant);
 
 	yl_mat3_mulv(playerOrientation, tempVector, &dragForce);
 
 	velocityDirection[0] += (float)((accelerationDirection[0] * playerSpeed - dragForce[0]) * stepSeconds);
-	velocityDirection[1] += (float)((accelerationDirection[1] * playerSpeed - dragForce[1]) * stepSeconds);
-	velocityDirection[2] += (float)((accelerationDirection[2] * playerSpeed - dragForce[2] - gravity) * stepSeconds);
+	velocityDirection[1] += (float)((accelerationDirection[1] * playerSpeed - dragForce[1] - gravity) * stepSeconds);
+	velocityDirection[2] += (float)((accelerationDirection[2] * playerSpeed - dragForce[2]) * stepSeconds);
 
 	playerX += velocityDirection[0] * stepSeconds;
 	playerY += velocityDirection[1] * stepSeconds;
@@ -497,38 +508,70 @@ void gameStep(int64_t stepNanoSeconds) {
 	}
 }
 
+struct mousePosition {
+	double x;
+	double y;
+};
+
+void tabPress(struct mousePosition* lastPosition) {
+	if (isPaused) {
+		glfwSetCursorPos(window, 0.0, 0.0);
+		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+		(*lastPosition).x = 0;
+		(*lastPosition).y = 0;
+		isPaused = false;
+	}
+	else {
+		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		isPaused = true;
+	}
+}
+
+void ePress(void* dummy) {
+	if (gravity == 0.0) {
+		gravity = (float)9.8;
+		forwardsDragConstant = 1.0 / 4096.0;
+		sidewaysDragConstant = 32.0 / 4096.0;
+		verticalDragConstant = 256.0 / 4096.0;
+	}
+	else {
+		gravity = (float)0.0;
+		forwardsDragConstant = 32.0 / 4096.0;
+		sidewaysDragConstant = 32.0 / 4096.0;
+		verticalDragConstant = 32.0 / 4096.0;
+	}
+}
+
+void buttonEvent(int button, bool *buttonWasPressed, void onPress(void*), void* args) {
+	bool buttonIsPresed = glfwGetKey(window, button) == GLFW_PRESS;
+	if (buttonIsPresed & !*buttonWasPressed) {
+		onPress(args);
+		*buttonWasPressed = true;
+	}
+	else if (!buttonIsPresed & *buttonWasPressed) {
+		*buttonWasPressed = false;
+	}
+}
+
 void processInput(GLFWwindow* window) {
 	//get curser delta
-	static double lastPositionX, lastPositionY = 0;
+	static struct mousePosition lastPosition = { 0.0, 0.0 };
 	if (!isPaused) {
 		double currentPositionX, currentPositionY;
 		glfwGetCursorPos(window, &currentPositionX, &currentPositionY);
-		curserDeltaX = (float)(currentPositionX - lastPositionX);
-		curserDeltaY = (float)(currentPositionY - lastPositionY);
-		lastPositionX = currentPositionX;
-		lastPositionY = currentPositionY;
+		curserDeltaX = (float)(currentPositionX - lastPosition.x);
+		curserDeltaY = (float)(currentPositionY - lastPosition.y);
+		lastPosition.x = currentPositionX;
+		lastPosition.y = currentPositionY;
 	}
 
 	//manage tab for pause/ unpause
 	static bool tabWasPresed = false;
-	bool tabIsPresed = glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS;
-	if (tabIsPresed & !tabWasPresed) {
-		if (isPaused) {
-			glfwSetCursorPos(window, 0.0, 0.0);
-			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-			lastPositionX = 0;
-			lastPositionY = 0;
-			isPaused = false;
-		}
-		else {
-			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-			isPaused = true;
-		}
-		tabWasPresed = true;
-	}
-	else if (!tabIsPresed & tabWasPresed) {
-		tabWasPresed = false;
-	}
+	buttonEvent(GLFW_KEY_TAB, &tabWasPresed, tabPress, &lastPosition);
+
+	static bool eWasPresed = false;
+	buttonEvent(GLFW_KEY_E, &eWasPresed, ePress, NULL);
+	
 
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, 1);
