@@ -9,6 +9,7 @@ layout(push_constant) uniform PushConstants {
     uvec3 playerPosition;
 } pcBuffer;
 float fog = 1;
+uint16_t stepIndex;
 
 //all of this is completely bodged together.
 
@@ -20,10 +21,11 @@ float ocilator (float x) {
 }
 
 bool invertCollor = false;
+float terainScale = 1.0 / 128.0;
+float downscaleFactor = 0.618034;
 bool isOccupied(uvec3 position, uint16_t direction, int16_t directionSighn) {
     float returnColor;
-    float terainScale = 1.0 / 128.0;
-    float downscaleFactor = 0.618034;
+    
     
     //very basic noise function, probobly could have used perline noise but i'm using this instead
     //ocilator(pos % terainScale)
@@ -67,13 +69,64 @@ bool isOccupied(uvec3 position, uint16_t direction, int16_t directionSighn) {
 
 
 float minimum(vec3 vector) {
-    return min(min(vector[0], vector[1]), vector[2]);
+    stepIndex = uint16_t(uint16_t((vector[1] < vector[2]) && (vector[1] < vector[0])) + (uint16_t((vector[2] <= vector[1]) && (vector[2] < vector[0])) * 2));
+    return vector[stepIndex];
 }
 
 int minIndex(vec3 vector) {
-    return int((vector[1] < vector[2]) && (vector[1] < vector[0])) + (int((vector[2] < vector[1]) && (vector[2] < vector[0])) * 2);
+    
+    //todo redoo this code so the bitwise version works properly
+    /*if (vector[0] <= vector[1] && vector[0] <= vector[2]) {
+        return int(0);
+    }
+    else if (vector[1] <= vector[0] && vector[1] <= vector[2]) {
+        return int(1);
+    }
+    else if (vector[2] <= vector[1] && vector[2] <= vector[0]) {
+        return int(2);
+    }
+    else {
+        return int(3);
+    }*/
+
+    /*if (vector[0] == 0.0) {
+        return 0;
+    }
+    else if (vector[1] == 0.0) {
+        return 1;
+    }
+    else if (vector[2] == 0.0) {
+        return 2;
+    }
+    else {
+        return 3;
+    }*/
+    
+
+    return int((vector[1] < vector[2]) && (vector[1] < vector[0])) + (int((vector[2] <= vector[1]) && (vector[2] < vector[0])) * 2);
 }
 void main() {
+    /*
+    int test = minIndex(vec3(0.5, 1.0, 0.0));
+    if (test == 0) {
+        outColor = vec4(1.0, 0.0, 0.0, 1.0);
+        return;
+    }
+    else if (test == 1) {
+        outColor = vec4(0.0, 1.0, 0.0, 1.0);
+        return;
+    }
+    else if (test == 2) {
+        outColor = vec4(0.0, 0.0, 1.0, 1.0);
+        return;
+    }
+    else {
+        outColor = vec4(1.0, 0.0, 1.0, 1.0);
+        return;
+    }
+    */
+
+
     vec3 directionVector = {2.0 * fragColor[0] - 1.0, 2.0 * fragColor[1] - 1.0, 1.0}; // usumes a 32 bit float
     float screenX = directionVector[0];
     float screenY = directionVector[1] * pcBuffer.intraVoxelPos[3];
@@ -85,7 +138,7 @@ void main() {
     //screanTranslation is a 3X4 matrix, it needs to be this way because of stupid padding rules because programers hate the number 3.
     //i just asume when i convert to mat3 it just deleats the last collumn.
     directionVector *= mat3(pcBuffer.screanTranslation);
-    float adjustment = 1.0 / (abs(directionVector[0]) + abs(directionVector[1]) + abs(directionVector[2]));
+    float adjustment = 1.0 / sqrt(directionVector[0]*directionVector[0] + directionVector[1]*directionVector[1] + directionVector[2]*directionVector[2]);
     directionVector *= adjustment;
     vec3 rayPos = vec3(pcBuffer.intraVoxelPos); // distence to corisponding voxel wall
     if (directionVector[0] > 0) {
@@ -106,18 +159,28 @@ void main() {
     //    return;
     //}
     float stepDist;
-    uint16_t stepIndex;
-    float fogConstant =  507.0 / 512.0;//507.0 / 512.0
+    
+    float fogConstant =  507.0 / 512.0;//507.0 / 512.0 //
+    //if (abs(rayPos[1]) == 0) { 
+    //    invertCollor = true;
+    //}
+
+
+
     for (int i = 0; i < 512; i++) {
         fog *= fogConstant;
-        float stepDist = minimum(rayPos * distTilStep);
+        float stepDist = minimum(rayPos * distTilStep); //minimum also effects stepIndex
+
         rayPos -= abs(directionVector) * stepDist;
-        uint16_t stepIndex = uint16_t(minIndex(rayPos));
+        
+
         univercalPos[stepIndex] += int32_t(sign(directionVector[stepIndex]));
         rayPos[stepIndex]++;
+        
         if (isOccupied(univercalPos, stepIndex, int16_t(sign(directionVector[stepIndex])))) {
             return;
         }
+
     }
 
     

@@ -46,7 +46,7 @@ float forwardsDragConstant = 32.0 / 4096.0;
 float sidewaysDragConstant = 32.0 / 4096.0;
 float verticalDragConstant = 32.0 / 4096.0;*/
 
-float targetFramesPerSecond = 350.0;
+float targetFramesPerSecond = 60.0;
 
 
 
@@ -195,11 +195,23 @@ typedef yl_vec3 yl_mat3[3];
 typedef float yl_vec2[2];
 typedef yl_vec2 yl_mat2[2];
 
-#define YL_MAT3_IDENTITY_INIT {{1.0f, 0.0f, 0.0f}, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }}
-#define YL_MAT2_IDENTITY_INIT {{1.0f, 0.0f}, { 0.0f, 1.0f }}
+typedef struct {
+	yl_vec3 vector;
+	float scalar;
+}yl_quat;
+
+#define YL_MAT3_IDENTITY_INIT {{ 1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }}
+#define YL_MAT2_IDENTITY_INIT {{ 1.0f, 0.0f }, { 0.0f, 1.0f }}
+#define YL_QUAT_IDENTITY_INIT {{ 0.0f, 0.0f, 0.0f }, 1.0f}
 
 void yl_vec3_dot(yl_vec3 vec1, yl_vec3 vec2, float* location) {
 	*location = vec1[0] * vec2[0] + vec1[1] * vec2[1] + vec1[2] * vec2[2];
+}
+
+void yl_vec3_cross(yl_vec3 vec1, yl_vec3 vec2, yl_vec3* location) {
+	(*location)[0] = vec1[1] * vec2[2] - vec1[2] * vec2[1];
+	(*location)[1] = vec1[2] * vec2[0] - vec1[0] * vec2[2];
+	(*location)[2] = vec1[0] * vec2[1] - vec1[1] * vec2[0];
 }
 
 void yl_vec3_normalize(yl_vec3 inputVecotr, yl_vec3* location) {
@@ -278,8 +290,69 @@ void yl_vec2Rotate(yl_vec2 inputVector, float angle, yl_vec2* location) {
 	(*location)[1] = inputVector[0] * sin(angle) + inputVector[1] * cos(angle);
 }
 
+void yl_createRotationQuat(yl_vec3 inputVector, float angle, yl_quat* location) {
+	float sinAngle = sin(angle * 0.5);
+	(*location).vector[0] = sinAngle * inputVector[0];
+	(*location).vector[1] = sinAngle * inputVector[1];
+	(*location).vector[2] = sinAngle * inputVector[2];
+	(*location).scalar = cos(angle * 0.5);
+}
 
 
+void yl_quatMul(yl_quat quat1, yl_quat quat2, yl_quat* location) {
+	//dear God i'm sorry
+	(*location).vector[0] = quat1.scalar * quat2.vector[0] + quat1.vector[0] * quat2.scalar + quat1.vector[1] * quat2.vector[2] - quat1.vector[2] * quat2.vector[1];
+	(*location).vector[1] = quat1.scalar * quat2.vector[1] - quat1.vector[0] * quat2.vector[2] + quat1.vector[1] * quat2.scalar + quat1.vector[2] * quat2.vector[0];
+	(*location).vector[2] = quat1.scalar * quat2.vector[2] + quat1.vector[0] * quat2.vector[1] - quat1.vector[1] * quat2.vector[0] + quat1.vector[2] * quat2.scalar;
+	(*location).scalar = quat1.scalar * quat2.scalar - quat1.vector[0] * quat2.vector[0] - quat1.vector[1] * quat2.vector[1] - quat1.vector[2] * quat2.vector[2];
+}
+
+void yl_rotateQuat(yl_quat inputQuat, yl_vec3 inputVector, float angle, yl_quat* location) {
+	yl_quat rotationQuat;
+	yl_createRotationQuat(inputVector, angle, &rotationQuat);
+	yl_quatMul(inputQuat, rotationQuat, location);
+}
+
+yl_quat inverceQuat(yl_quat input) {
+	return (yl_quat) { { -(input.vector[0]), -(input.vector[0]), -(input.vector[0]) }, input.scalar };
+}
+
+void yl_quatVecRotate(yl_quat inputQuat, yl_vec3 inputVector, yl_vec3* location) {
+	float dot1 = 0.0;
+	float dot2 = 0.0;
+	yl_vec3 cross1 = { 0.0, 0.0, 0.0 };
+
+	yl_vec3_dot(inputQuat.vector, inputVector, &dot1);
+	yl_vec3_dot(inputQuat.vector, inputQuat.vector, &dot2);
+	yl_vec3_cross(inputQuat.vector, inputVector, &cross1);
+
+	for (int i = 0; i < 3; i++) {
+		(*location)[i] = inputQuat.vector[i] * 2.0 * dot1 + inputVector[i] * ((inputQuat.scalar * inputQuat.scalar) - dot2) + cross1[i] * 2.0 * inputQuat.scalar;
+
+	}
+
+}
+
+/*void yl_quatVecRotate(yl_quat inputQuat, yl_vec3 inputVector, yl_vec3* location) {
+	yl_quat inverceQuat = { { -inputQuat.vector[0], -inputQuat.vector[1], -inputQuat.vector[2] }, inputQuat.scalar };
+
+	yl_quat tempQuat;
+	yl_quat tempQuat2;
+	yl_quatMul(inputQuat, (yl_quat){ { inputVector[0], inputVector[1], inputVector[2] } , 0.0 }, &tempQuat);
+	yl_quatMul(tempQuat, inverceQuat, &tempQuat2);
+	yl_vec3_copy(tempQuat2.vector, location);
+
+}*/
+
+void yl_quatMatRotate(yl_quat inputQuat, yl_mat3 inputMat, yl_mat3* location) {
+	yl_mat3 transposedMatrix;
+	yl_mat3 transposedResult;
+	yl_mat3_transpose(inputMat, &transposedMatrix);
+	for (int i = 0; i < 3; i++) {
+		yl_quatVecRotate(inputQuat, transposedMatrix[i], &(transposedResult[i]));
+	}
+	yl_mat3_transpose(transposedResult, location);
+}
 
 
 
@@ -396,15 +469,17 @@ bool rightIsPressed;
 bool upIsPressed;
 bool downIsPressed;
 bool slowIsPressed;
+
 void gameStep(int64_t stepNanoSeconds) {
 	if (isPaused) {
 		return;
 	}
-	
+
 	yl_mat3 tempMatrix = YL_MAT3_IDENTITY_INIT;
+	yl_quat tempQuat = YL_QUAT_IDENTITY_INIT;
 	yl_vec3 tempVector = { 0.0, 0.0, 0.0 };
 	yl_vec2 tempVec2 = { 0.0, 0.0 };
-	
+
 	double stepSeconds = stepNanoSeconds / 1e9;
 	static float xScale = 1;
 	static float aspectRatio = 1;
@@ -419,20 +494,18 @@ void gameStep(int64_t stepNanoSeconds) {
 		{0.0, 0.0, 1.0}
 	};
 
-	
-	
-	static yl_mat3 playerOrientation = YL_MAT3_IDENTITY_INIT;
-	yl_mat3 playerRotationDelta = YL_MAT3_IDENTITY_INIT;
-	yl_zRotateMat3(playerRotationDelta, curserDeltaX / 512, &tempMatrix);
-	yl_xRotateMat3(tempMatrix, curserDeltaY / 512, &playerRotationDelta);
 
-	yl_mat3_mul(playerOrientation, playerRotationDelta, &tempMatrix);
-	yl_mat3_copy(tempMatrix, &playerOrientation);
-	yl_mat3_mul(playerOrientation, renderMatrix, &tempMatrix);
+
+	
+	static yl_quat quatPlayerOrientation = YL_QUAT_IDENTITY_INIT;
+	yl_rotateQuat(quatPlayerOrientation, (yl_vec3) { 0.0, 0.0, 1.0 }, -curserDeltaX / 512, &tempQuat);
+	yl_rotateQuat(tempQuat, (yl_vec3) {1.0, 0.0, 0.0 }, curserDeltaY / 512, &quatPlayerOrientation);
+	yl_quatMatRotate(quatPlayerOrientation, renderMatrix, &tempMatrix);
 	yl_mat3_copy(tempMatrix, &renderMatrix);
+	
 
-	
-	
+
+
 
 	static double playerX = START_POS;
 	static double playerY = START_POS;
@@ -445,8 +518,8 @@ void gameStep(int64_t stepNanoSeconds) {
 		playerSpeed = 10.0;
 	}
 
-	yl_vec3 accelerationDirection = {0.0, 0.0, 0.0};
-	static yl_vec3 velocityDirection = {0.0, 0.0, 0.0};
+	yl_vec3 accelerationDirection = { 0.0, 0.0, 0.0 };
+	static yl_vec3 velocityDirection = { 0.0, 0.0, 0.0 };
 	if (forwardIsPressed) {
 		accelerationDirection[2] += 1;
 	}
@@ -465,22 +538,24 @@ void gameStep(int64_t stepNanoSeconds) {
 	if (rightIsPressed) {
 		accelerationDirection[0] -= 1;
 	}
+
 	
 	
-	yl_mat3_mulv(playerOrientation, accelerationDirection, &tempVector);
+	yl_quatVecRotate(quatPlayerOrientation, accelerationDirection, &tempVector);
 	yl_vec3_copy(tempVector, &accelerationDirection);
 
 	yl_vec3 dragForce;
-	//these two take the player velocity and translate it into the players point of veiwand stores it in tempVector
-	yl_mat3_transpose(playerOrientation, &tempMatrix);
-	yl_mat3_mulv(tempMatrix, velocityDirection, &tempVector);
+	
+	yl_quatVecRotate((yl_quat){ { -quatPlayerOrientation.vector[0], -quatPlayerOrientation.vector[1], -quatPlayerOrientation.vector[2] }, quatPlayerOrientation.scalar }, velocityDirection, &tempVector);
+	
+
 	float totalVelocity = (float)sqrt(velocityDirection[0] * velocityDirection[0] + velocityDirection[1] * velocityDirection[1] + velocityDirection[2] * velocityDirection[2]);
 
 	tempVector[0] = (float)(totalVelocity * tempVector[0] * sidewaysDragConstant);
 	tempVector[1] = (float)(totalVelocity * tempVector[1] * verticalDragConstant);
 	tempVector[2] = (float)(totalVelocity * tempVector[2] * forwardsDragConstant);
 
-	yl_mat3_mulv(playerOrientation, tempVector, &dragForce);
+	yl_quatVecRotate(quatPlayerOrientation, tempVector, &dragForce);
 
 	velocityDirection[0] += (float)((accelerationDirection[0] * playerSpeed - dragForce[0]) * stepSeconds);
 	velocityDirection[1] += (float)((accelerationDirection[1] * playerSpeed - dragForce[1] - gravity) * stepSeconds);
@@ -489,18 +564,21 @@ void gameStep(int64_t stepNanoSeconds) {
 	playerX += velocityDirection[0] * stepSeconds;
 	playerY += velocityDirection[1] * stepSeconds;
 	playerZ += velocityDirection[2] * stepSeconds;
-	debugLog("speed: %f\n", totalVelocity);
+	//debugLog("speed: %f\n", totalVelocity);
 
 	
-	
+
 	fragmentPushConstant.playerPosition[0] = (uint32_t)floor(playerX);
 	fragmentPushConstant.playerPosition[1] = (uint32_t)floor(playerY);
 	fragmentPushConstant.playerPosition[2] = (uint32_t)floor(playerZ);
 	fragmentPushConstant.intraVoxelPos[0] = (float)fmod(playerX, 1);
 	fragmentPushConstant.intraVoxelPos[1] = (float)fmod(playerY, 1);
 	fragmentPushConstant.intraVoxelPos[2] = (float)fmod(playerZ, 1);
+
+
 	fragmentPushConstant.intraVoxelPos[3] = aspectRatio;
 	
+
 	for (int i = 0; i < 3; i++) {
 		for (int l = 0; l < 3; l++) {
 			fragmentPushConstant.screanTranslation[i][l] = renderMatrix[i][l];
@@ -817,6 +895,7 @@ void mainLoop() {
 		}
 
 		elapsedTime = (int64_t)((timeEnd.tv_sec - timeStart.tv_sec) * 1e9 + timeEnd.tv_nsec - timeStart.tv_nsec);
+		//debugLog("frame time: %f milliseconds\n", elapsedTime / 1e6);
 
 		if(targetTime > elapsedTime) {
 			Sleep((int)round((targetTime - elapsedTime) / 1e6));
