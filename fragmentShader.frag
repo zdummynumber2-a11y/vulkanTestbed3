@@ -8,7 +8,9 @@ layout(push_constant) uniform PushConstants {
     vec4 intraVoxelPos;
     uvec3 playerPosition;
 } pcBuffer;
-float fog = 1;
+float totalDist = 0;
+float fogConstant =  -1.0 / 64.0;
+uint16_t stepIndex;
 
 //all of this is completely bodged together.
 
@@ -16,16 +18,17 @@ float fog = 1;
 //this function was originally made for looking in +x exclucivly, these varyables allow to reset each faces shading based on what direction the ray is, these are the defaults.
 
 float ocilator (float x) {
-    return float(((6.0 * x - 9.0) * x + 3.0) * x);
+    return float(((6.0 * x - 9.0) * x + 3.0) * x * 5.0);
+    //return sin(x * 2 * PI);
+    // these act rouchly the same, one may or may not be slightly better performing than the other depending on your hardware.
 }
-float bright = float(0.625);
-float medium = float(0.5);
-float dark = float(0.25);
+
 bool invertCollor = false;
+float terainScale = 1.0 / 128.0;
+float downscaleFactor = 0.618034;
 bool isOccupied(uvec3 position, uint16_t direction, int16_t directionSighn) {
     float returnColor;
-    float terainScale = 1.0 / 128.0;
-    float downscaleFactor = 0.618034;
+    
     
     //very basic noise function, probobly could have used perline noise but i'm using this instead
     //ocilator(pos % terainScale)
@@ -36,15 +39,18 @@ bool isOccupied(uvec3 position, uint16_t direction, int16_t directionSighn) {
     ocilator(mod(float(position[0]) * terainScale * downscaleFactor, 1.0)) + 
     ocilator(mod(float(position[1]) * terainScale * downscaleFactor, 1.0)) + 
     ocilator(mod(float(position[2]) * terainScale * downscaleFactor, 1.0)) > 0.0;
+
     if(voxelOcupied) {
+        
+        float fog = exp(totalDist * fogConstant);
         if(direction == 0) {
-            returnColor = bright;
+            returnColor = 0.375;
         }
         else if(direction == 1) {
-            returnColor = medium;
+            returnColor = 0.25;
         }
         else if(direction == 2) {
-            returnColor = dark;
+            returnColor = 0.5;
         }
         else {
         outColor = vec4(1.0, 0.0, 1.0, 1.0);
@@ -68,212 +74,99 @@ bool isOccupied(uvec3 position, uint16_t direction, int16_t directionSighn) {
 }
 
 
+float minimum(vec3 vector) {
+    stepIndex = uint16_t(uint16_t((vector[1] < vector[2]) && (vector[1] < vector[0])) + (uint16_t((vector[2] <= vector[1]) && (vector[2] < vector[0])) * 2));
+    return vector[stepIndex];
+}
+
 
 void main() {
-    uvec3 testVector = {131072, 0, 0};
-    if(testVector[0] != 131072) {
+    /*
+    int test = minIndex(vec3(0.5, 1.0, 0.0));
+    if (test == 0) {
         outColor = vec4(1.0, 0.0, 0.0, 1.0);
+        return;
     }
-    
-    vec3 screenVector = {1, 2 * fragColor[0] - 1, 2 * fragColor[1] - 1};
-    float screenX = screenVector[1];
-    float screenY = screenVector[2] * pcBuffer.intraVoxelPos[3];
+    else if (test == 1) {
+        outColor = vec4(0.0, 1.0, 0.0, 1.0);
+        return;
+    }
+    else if (test == 2) {
+        outColor = vec4(0.0, 0.0, 1.0, 1.0);
+        return;
+    }
+    else {
+        outColor = vec4(1.0, 0.0, 1.0, 1.0);
+        return;
+    }
+    */
+
+
+    vec3 directionVector = {2.0 * fragColor[0] - 1.0, 2.0 * fragColor[1] - 1.0, 1.0}; // usumes a 32 bit float
+    float screenX = directionVector[0];
+    float screenY = directionVector[1] * pcBuffer.intraVoxelPos[3];
     //x's range is -1 to 1, y is proportianal to x in screenspace.
     if(screenX * screenX + screenY * screenY < 0.0002) {
         invertCollor = true;
     }
     
-    
-    //screanTranslation is a 3X4 matrix, it needs to be this way because of stupid padding rules because programers hate the number 3. i dont know if strait multiplying it here will break anything in the future.
-    //i just asume when i convert to mat3 it just deleats the last collumn. i eventually plan to use the last 3 floats for the players intravoxel position.
-    screenVector = mat3(pcBuffer.screanTranslation) * screenVector;
-    float maxValue = max(max(abs(screenVector[0]),abs(screenVector[1])), abs(screenVector[2]));
+    //screanTranslation is a 3X4 matrix, it needs to be this way because of stupid padding rules because programers hate the number 3.
+    //i just asume when i convert to mat3 it just deleats the last collumn.
+    directionVector *= mat3(pcBuffer.screanTranslation);
+    float adjustment = 1.0 / sqrt(directionVector[0]*directionVector[0] + directionVector[1]*directionVector[1] + directionVector[2]*directionVector[2]);
+    directionVector *= adjustment;
+    vec3 rayPos = vec3(pcBuffer.intraVoxelPos); // distence to corisponding voxel wall
+    if (directionVector[0] > 0) {
+        rayPos[0] = 1.0 - rayPos[0];
+    }
+    if (directionVector[1] > 0) {
+        rayPos[1] = 1.0 - rayPos[1];
+    }
+    if (directionVector[2] > 0) {
+        rayPos[2] = 1.0 - rayPos[2];
+    }
 
-    uint16_t xIndex;
-    uint16_t yIndex;
-    uint16_t zIndex;
-    int16_t majorDirectionDirection;
-    if(maxValue == abs(screenVector[0])) {
-        xIndex = uint16_t(0);
-        yIndex = uint16_t(1);
-        zIndex = uint16_t(2);
-        majorDirectionDirection = int16_t(sign(screenVector[0]));
-        if (majorDirectionDirection == -1) {
-            //in lue of a propper solution to lighting, i'm just gonna do this.
-            bright = float(1.0 - 0.625);
-            medium = float(0.5); //1.0 - 
-            dark = float(0.25);
-        }
+    vec3 distTilStep = 1.0 / abs(directionVector);
+    uvec3 univercalPos = pcBuffer.playerPosition;
+
+    //if (directionVector[0] < 0.0 || directionVector[1] < 0.0 || directionVector[2] < 0.0) {
+    //    outColor = vec4(1.0, 0.0, 1.0, 1.0);
+    //    return;
+    //}
+    float stepDist;
+    
+    //507.0 / 512.0 //
+    //if (abs(rayPos[1]) == 0) { 
+    //    invertCollor = true;
+    //}
+
+
+
+    for (int i = 0; i < 512; i++) {
         
-    }
-    else if(maxValue == abs(screenVector[1])) {
-        xIndex = uint16_t(1);
-        yIndex = uint16_t(0);
-        zIndex = uint16_t(2);
-        majorDirectionDirection = int16_t(sign(screenVector[1]));
+        float stepDist = minimum(rayPos * distTilStep); //minimum also effects stepIndex
+        totalDist += stepDist;
+
+        rayPos -= abs(directionVector) * stepDist;
         
-    }
-    else if(maxValue == abs(screenVector[2])) {
-        xIndex = uint16_t(2);
-        yIndex = uint16_t(0);
-        zIndex = uint16_t(1);
-        majorDirectionDirection = int16_t(sign(screenVector[2]));
-        if (majorDirectionDirection == -1) {
-            //in lue of a propper solution to lighting, i'm just gonna do this.
-            bright = float(0.625);
-            medium = float(1.0 - 0.5);
-            dark = float(1.0 - 0.25);
-        }
+
+        univercalPos[stepIndex] += int32_t(sign(directionVector[stepIndex]));
+        rayPos[stepIndex]++;
         
-    }
-
-    screenVector /= maxValue;
-    
-    
-    
-
-    //uint16_t xIndex = uint16_t(0);
-    //uint16_t yIndex = uint16_t(1);
-    //uint16_t zIndex = uint16_t(2);
-
-    
-
-    //the rays angles are stored as slopes, the upside of this is that slopes are really easy and cheap to work with, the downside is that I'm stuck facing north for now.
-    uint16_t xSlope;
-    uint16_t ySlope;
-    //i also need to store the sign of the slope, probably could have done this with signed integers, but that could make bit manipulation more difficult in the future.
-    int16_t xDirection;
-    int16_t yDirection;
-    if(screenVector[yIndex] >= 0.0) {
-        xDirection = int16_t(1);
-        xSlope = uint16_t((screenVector[yIndex]) * 32768);
-    }
-    else {
-        xDirection = int16_t(-1);
-        xSlope = uint16_t((-screenVector[yIndex]) * 32768);
-    }
-    if(screenVector[zIndex] >= 0.0) {
-        yDirection = int16_t(1);
-        ySlope = uint16_t((screenVector[zIndex]) * 32768);
-    }
-    else {
-        yDirection = int16_t(-1);
-        ySlope = uint16_t((-screenVector[zIndex]) * 32768);
-    }
-    
-
-    
-    
-    
-    
-    uvec3 universalPosition = pcBuffer.playerPosition;
-    //this number is not acounting for the players y and z coordanits
-    uint16_t xPose;
-    uint16_t yPose;
-    if(majorDirectionDirection == 1) {
-        xPose = uint16_t(((1.0 - pcBuffer.intraVoxelPos[xIndex]) * float(xSlope)));
-        yPose = uint16_t(((1.0 - pcBuffer.intraVoxelPos[xIndex]) * float(ySlope)));
-    }
-    else {
-        xPose = uint16_t(((pcBuffer.intraVoxelPos[xIndex]) * float(xSlope)));
-        yPose = uint16_t(((pcBuffer.intraVoxelPos[xIndex]) * float(ySlope)));
-    }
-    
-
-
-    if(xDirection == -1) {
-        xPose += uint16_t(((1.0 - pcBuffer.intraVoxelPos[yIndex]) * 32768.0)); 
-    }
-    else {
-        xPose += uint16_t(((pcBuffer.intraVoxelPos[yIndex]) * 32768.0));
-    }
-    if(yDirection == -1) {
-        yPose += uint16_t(((1.0 - pcBuffer.intraVoxelPos[zIndex]) * 32768.0)); 
-    }
-    else {
-        yPose += uint16_t(((pcBuffer.intraVoxelPos[zIndex]) * 32768.0));
-    }
-
-    if((pcBuffer.intraVoxelPos[zIndex] * 32768.0) + (pcBuffer.intraVoxelPos[xIndex] * float(ySlope)) >= 65536) {
-        outColor = vec4(1.0, 0.0, 1.0, 1.0);
-        return;
-    }
-
-    //every iteration of this loop will step the x coordinate of the ray by 1.
-    float fogConstant = 1.0 - (1.0 / 64);
-
-    for(int i = 0; i < 512; i++) {
-        fog *= fogConstant;
-        //adds slope to intra-voxel position, will later check if the new position leaves the current voxel, if it does it checks all the potential voxels it intersected.
-        
-        if (xSlope >= 32768 || ySlope >= 32768) {
-            outColor = vec4(1.0, 0.0, 1.0, 1.0);
+        if (isOccupied(univercalPos, stepIndex, int16_t(sign(directionVector[stepIndex])))) {
             return;
         }
 
-        //i could explain this part, but i think it would be more funny if i didn't.
-        if (xPose >= 32768 && yPose >= 32768) {
-            xPose = xPose % uint16_t(32768);
-            yPose = yPose % uint16_t(32768);
-            //(uint32_t(yPose) * xSlope) > (uint32_t(xPose) * ySlope)
-            //true
-            if ((uint32_t(yPose) * xSlope) > (uint32_t(xPose) * ySlope)) {
-                universalPosition[zIndex] = universalPosition[zIndex] + uint32_t(yDirection);
-                if(isOccupied(universalPosition, zIndex, yDirection)) {
-                    return;
-                }
-
-                universalPosition[yIndex] = universalPosition[yIndex] + uint32_t(xDirection);
-                if(isOccupied(universalPosition, yIndex, xDirection)) {
-                    return;
-                }
-            }
-            else {
-                universalPosition[yIndex] = universalPosition[yIndex] + uint32_t(xDirection);
-                if(isOccupied(universalPosition, yIndex, xDirection)) {
-                    return;
-                }
-
-                universalPosition[zIndex] = universalPosition[zIndex] + uint32_t(yDirection);
-                if(isOccupied(universalPosition, zIndex, yDirection)) {
-                    return;
-                }
-            }
-
-            
-
-            
-        }
-        else if (xPose >= 32768) {
-            xPose = xPose % uint16_t(32768);
-
-            universalPosition[yIndex] = universalPosition[yIndex] + uint32_t(xDirection);
-            if(isOccupied(universalPosition, yIndex, xDirection)) {
-                return;
-            }
-        }
-        else if (yPose >= 32768) {
-            yPose = yPose % uint16_t(32768);
-            universalPosition[zIndex] = universalPosition[zIndex] + uint32_t(yDirection);
-            if(isOccupied(universalPosition, zIndex, yDirection)) {
-                return;
-            }
-        }
-        universalPosition[xIndex] += uint32_t(majorDirectionDirection);
-        if(isOccupied(universalPosition, xIndex, int16_t(1))) {
-            return;
-        }
-        xPose = xPose + xSlope;
-        yPose = yPose + ySlope;
-
     }
 
-    if(invertCollor) {
+    
+    if (invertCollor) {
         outColor = vec4(1.0, 1.0, 1.0, 1.0);
     }
     else {
         outColor = vec4(0.0, 0.0, 0.0, 1.0);
     }
+    return;
     
     
 }
