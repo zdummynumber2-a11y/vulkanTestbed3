@@ -8,7 +8,8 @@ layout(push_constant) uniform PushConstants {
     vec4 intraVoxelPos;
     uvec3 playerPosition;
 } pcBuffer;
-float fog = 1;
+float totalDist = 0;
+float fogConstant =  -1.0 / 64.0;
 uint16_t stepIndex;
 
 //all of this is completely bodged together.
@@ -17,7 +18,9 @@ uint16_t stepIndex;
 //this function was originally made for looking in +x exclucivly, these varyables allow to reset each faces shading based on what direction the ray is, these are the defaults.
 
 float ocilator (float x) {
-    return float(((6.0 * x - 9.0) * x + 3.0) * x);
+    return float(((6.0 * x - 9.0) * x + 3.0) * x * 5.0);
+    //return sin(x * 2 * PI);
+    // these act rouchly the same, one may or may not be slightly better performing than the other depending on your hardware.
 }
 
 bool invertCollor = false;
@@ -36,7 +39,10 @@ bool isOccupied(uvec3 position, uint16_t direction, int16_t directionSighn) {
     ocilator(mod(float(position[0]) * terainScale * downscaleFactor, 1.0)) + 
     ocilator(mod(float(position[1]) * terainScale * downscaleFactor, 1.0)) + 
     ocilator(mod(float(position[2]) * terainScale * downscaleFactor, 1.0)) > 0.0;
+
     if(voxelOcupied) {
+        
+        float fog = exp(totalDist * fogConstant);
         if(direction == 0) {
             returnColor = 0.375;
         }
@@ -73,38 +79,7 @@ float minimum(vec3 vector) {
     return vector[stepIndex];
 }
 
-int minIndex(vec3 vector) {
-    
-    //todo redoo this code so the bitwise version works properly
-    /*if (vector[0] <= vector[1] && vector[0] <= vector[2]) {
-        return int(0);
-    }
-    else if (vector[1] <= vector[0] && vector[1] <= vector[2]) {
-        return int(1);
-    }
-    else if (vector[2] <= vector[1] && vector[2] <= vector[0]) {
-        return int(2);
-    }
-    else {
-        return int(3);
-    }*/
 
-    /*if (vector[0] == 0.0) {
-        return 0;
-    }
-    else if (vector[1] == 0.0) {
-        return 1;
-    }
-    else if (vector[2] == 0.0) {
-        return 2;
-    }
-    else {
-        return 3;
-    }*/
-    
-
-    return int((vector[1] < vector[2]) && (vector[1] < vector[0])) + (int((vector[2] <= vector[1]) && (vector[2] < vector[0])) * 2);
-}
 void main() {
     /*
     int test = minIndex(vec3(0.5, 1.0, 0.0));
@@ -160,7 +135,7 @@ void main() {
     //}
     float stepDist;
     
-    float fogConstant =  507.0 / 512.0;//507.0 / 512.0 //
+    //507.0 / 512.0 //
     //if (abs(rayPos[1]) == 0) { 
     //    invertCollor = true;
     //}
@@ -168,8 +143,9 @@ void main() {
 
 
     for (int i = 0; i < 512; i++) {
-        fog *= fogConstant;
+        
         float stepDist = minimum(rayPos * distTilStep); //minimum also effects stepIndex
+        totalDist += stepDist;
 
         rayPos -= abs(directionVector) * stepDist;
         
