@@ -823,7 +823,7 @@ void mainLoop() {
 			Sleep((int)round((targetTime - elapsedTime) / 1e6));
 		}
 		else {
-			debugLog("shoot, out'a frames.\n");
+			debugLog("shoot, out'a frames. %f fps.\n", 1e9 / elapsedTime);
 		}
 		
 	}
